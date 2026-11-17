@@ -1,0 +1,14 @@
+{
+  "name": "bounce",
+  "private": true,
+  "scripts": {
+    "gen:projects": "./scripts/generate-projects.sh",
+    "run:ios": "./scripts/run-ios.sh",
+    "run:mac": "./scripts/run-mac.sh",
+    "run:all": "./scripts/run-all.sh",
+    "gen:test-audio": "./scripts/generate-test-audio.sh",
+    "install:mac": "./scripts/install-mac.sh",
+    "install:ios": "./scripts/install-ios.sh",
+    "install:apps": "./scripts/install-all.sh"
+  }
+}

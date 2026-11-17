@@ -1,0 +1,60 @@
+name: BounceSender
+options:
+  createIntermediateGroups: true
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    PRODUCT_NAME: Bounce
+    PRODUCT_BUNDLE_IDENTIFIER: com.merlinkraemer.bounce.sender
+    MARKETING_VERSION: 1.0.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: 5.0
+    GENERATE_INFOPLIST_FILE: NO
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+    DEVELOPMENT_TEAM: PM5QWB5426
+packages:
+  BounceKit:
+    path: ../BounceKit
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.7.0
+
+targets:
+  BounceSender:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: BounceSender
+    dependencies:
+      - package: BounceKit
+        product: BounceKit
+      - package: Sparkle
+        product: Sparkle
+    info:
+      path: BounceSender/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: false
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.music
+        NSHumanReadableCopyright: Copyright 2026 Merlin Kraemer. MIT License.
+        NSBonjourServices:
+          - _bounce-sync._tcp
+          - _bounce-dev._tcp
+        NSLocalNetworkUsageDescription: Bounce uses your local network to send audio files to your iPhone.
+        SUFeedURL: https://onbounce.app/appcast.xml
+        SUPublicEDKey: wLRwLHzdujt8cigHTP7q5gSXSkfZGbhQI8HO1F4FLXo=
+        SUEnableAutomaticChecks: true
+    settings:
+      base:
+        INFOPLIST_FILE: BounceSender/Info.plist
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+    scheme:
+      gatherCoverageData: false

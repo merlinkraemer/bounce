@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in Bounce does not work as expected
+labels: ["bug"]
+body:
+  - type: input
+    id: app
+    attributes:
+      label: App
+      description: Mac or iPhone
+      placeholder: "Mac"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Shown in the app's About or Settings screen.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: macOS or iOS version
+      placeholder: "macOS 26.1 / iOS 18.2"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      placeholder: "MacBook Pro M3 / iPhone 15"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: Include steps to reproduce and what you expected instead.
+    validations:
+      required: true
