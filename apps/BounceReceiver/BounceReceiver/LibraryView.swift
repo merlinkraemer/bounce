@@ -51,16 +51,19 @@ struct LibraryView: View {
     @State private var trackToDeleteRemoval: DownloadManager.TrackRemoval = .delete
     @State private var navigateToNewPlaylist: Playlist?
     @State private var shareItem: ShareItem?
-    @State private var releasesCount: Int = 0
     @State private var listHeight: CGFloat = 0
     @State private var recentHeaderBottom: CGFloat = 0
     private static let listSpace = "libraryHomeList"
-    @State private var setsCount: Int = 0
 
     @State private var trackByIDCache: [UUID: Track] = [:]
 
     private var trackByID: [UUID: Track] {
         trackByIDCache
+    }
+
+    private var recentLatestVersions: [Version] {
+        var seenTrackIDs = Set<UUID>()
+        return recentVersionRecords.filter { seenTrackIDs.insert($0.trackID).inserted }
     }
 
     private var reviewGroupBinding: Binding<ImportPlanGroup?> {
@@ -137,20 +140,17 @@ struct LibraryView: View {
         }
         .onChange(of: allTracks, initial: true) {
             trackByIDCache = Dictionary(allTracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            recomputeReleasesCount()
-            recomputeSetsCount()
         }
-        .onChange(of: allPlaylists) { recomputeReleasesCount() }
     }
 
-    private func recomputeReleasesCount() {
+    private var releasesCount: Int {
         let trackCount = allTracks.filter(\.isReleased).count
         let playlistCount = allPlaylists.filter { $0.isReleased && !$0.isSoftDeleted }.count
-        releasesCount = trackCount + playlistCount
+        return trackCount + playlistCount
     }
 
-    private func recomputeSetsCount() {
-        setsCount = allTracks.filter(\.isSet).count
+    private var setsCount: Int {
+        allTracks.filter(\.isSet).count
     }
 
     private var libraryHomeList: some View {
@@ -277,13 +277,13 @@ struct LibraryView: View {
                     } else if !recentVersionRecords.isEmpty {
                         ListSectionHeaderRow(title: "Recent")
 
-                        ForEach(recentVersionRecords) { version in
+                        ForEach(recentLatestVersions) { version in
                                 if let track = trackByID[version.trackID] {
                                     RecentBounceRow(
                                         track: track,
                                         version: version,
-                                        isCurrentTrack: audioPlayer.currentVersion?.id == version.id,
-                                        isPlaying: audioPlayer.currentVersion?.id == version.id && audioPlayer.isPlaying,
+                                        isCurrentTrack: audioPlayer.currentTrack?.id == track.id,
+                                        isPlaying: audioPlayer.currentTrack?.id == track.id && audioPlayer.isPlaying,
                                         onTap: { play(track: track, version: version) },
                                         onAddToQueue: { addToQueue(track) },
                                         onAddToPlaylist: { trackToAddToPlaylist = track },

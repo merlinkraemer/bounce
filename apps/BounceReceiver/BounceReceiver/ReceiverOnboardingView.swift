@@ -205,7 +205,7 @@ struct PairMacSheet: View {
             } header: {
                 Text("Nearby Macs")
             } footer: {
-                Text("Open Bounce on your Mac. It shows up here.")
+                Text("Open Bounce on your Mac. It shows up here. Mac and iPhone need to be on the same Wi-Fi.")
             }
             Section {
                 GetMacAppHint(isMacFound: !nearby.isEmpty)
@@ -231,6 +231,10 @@ struct PairMacSheet: View {
                 Text("Connecting to \(selected?.name ?? "your Mac")\u{2026}")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Text("Mac and iPhone need to be on the same Wi-Fi.")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
             }
             Spacer()
@@ -301,6 +305,15 @@ struct PairMacSheet: View {
 
     // MARK: Actions
 
+    private static func failureText(_ error: Error) -> String {
+        switch error {
+        case SyncError.pairingFailed, SyncError.connectionFailed:
+            "\(error.localizedDescription). Check that both are on the same Wi-Fi and try again."
+        default:
+            error.localizedDescription
+        }
+    }
+
     private func reset() {
         pairTask?.cancel()
         selected = nil
@@ -335,7 +348,7 @@ struct PairMacSheet: View {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { phase = .paired }
             } catch {
                 guard !Task.isCancelled else { return }
-                pairError = error.localizedDescription
+                pairError = Self.failureText(error)
             }
         }
     }
@@ -363,7 +376,7 @@ struct PairMacSheet: View {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { phase = .paired }
             } catch {
                 guard !Task.isCancelled else { return }
-                pairError = error.localizedDescription
+                pairError = Self.failureText(error)
             }
         }
     }

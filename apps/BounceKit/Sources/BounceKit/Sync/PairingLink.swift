@@ -26,8 +26,9 @@ public enum PairingLinkError: Error, Equatable {
 
 /// What the Mac encodes in its pairing QR: which Mac to pair with and a
 /// short-lived single-use token proving the phone saw the Mac's screen.
-/// The payload is the query string only, so it can move to an https URL
-/// unchanged.
+/// Production QRs are universal links with the payload in the URL fragment, so
+/// the token and Mac name never reach the web server. Development QRs and Mac
+/// 1.0.0 QRs use the custom scheme with the payload as the query.
 public struct PairingLink: Equatable, Hashable, Sendable, Identifiable {
     public static let currentVersion = 1
 
@@ -60,32 +61,61 @@ public struct PairingLink: Equatable, Hashable, Sendable, Identifiable {
         date >= expiresAt
     }
 
-    public var url: URL {
-        var components = URLComponents()
-        components.scheme = lane.urlScheme
-        components.host = "pair"
-        components.queryItems = [
+    private var queryItems: [URLQueryItem] {
+        [
             URLQueryItem(name: "v", value: String(version)),
             URLQueryItem(name: "i", value: macDeviceID.uuidString),
             URLQueryItem(name: "n", value: macName),
             URLQueryItem(name: "t", value: token),
             URLQueryItem(name: "e", value: String(Int(expiresAt.timeIntervalSince1970)))
         ]
+    }
+
+    public var url: URL {
+        var components = URLComponents()
+        switch lane {
+        case .production:
+            components.scheme = "https"
+            components.host = BounceConstants.pairingLinkHost
+            components.path = BounceConstants.pairingLinkPath
+            var payload = URLComponents()
+            payload.queryItems = queryItems
+            components.percentEncodedFragment = payload.percentEncodedQuery
+        case .development:
+            components.scheme = lane.urlScheme
+            components.host = "pair"
+            components.queryItems = queryItems
+        }
         return components.url!
     }
 
     public static func parse(_ url: URL, lane: PairingLane = .current) throws -> PairingLink {
         guard let scheme = url.scheme?.lowercased(),
-              scheme == PairingLane.production.urlScheme || scheme == PairingLane.development.urlScheme else {
-            throw PairingLinkError.notAPairingLink
-        }
-        guard scheme == lane.urlScheme else { throw PairingLinkError.laneMismatch }
-        guard url.host?.lowercased() == "pair",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             throw PairingLinkError.notAPairingLink
         }
+        let payload: [URLQueryItem]
+        if scheme == "https" {
+            guard let host = url.host?.lowercased(),
+                  host == BounceConstants.pairingLinkHost || host == "www." + BounceConstants.pairingLinkHost,
+                  components.path == BounceConstants.pairingLinkPath
+                    || components.path == BounceConstants.pairingLinkPath + "/" else {
+                throw PairingLinkError.notAPairingLink
+            }
+            guard lane == .production else { throw PairingLinkError.laneMismatch }
+            var fragment = URLComponents()
+            fragment.percentEncodedQuery = components.percentEncodedFragment
+            payload = fragment.queryItems ?? []
+        } else {
+            guard scheme == PairingLane.production.urlScheme || scheme == PairingLane.development.urlScheme else {
+                throw PairingLinkError.notAPairingLink
+            }
+            guard scheme == lane.urlScheme else { throw PairingLinkError.laneMismatch }
+            guard url.host?.lowercased() == "pair" else { throw PairingLinkError.notAPairingLink }
+            payload = components.queryItems ?? []
+        }
         var values: [String: String] = [:]
-        for item in components.queryItems ?? [] {
+        for item in payload {
             guard let value = item.value, values[item.name] == nil else { throw PairingLinkError.malformed }
             values[item.name] = value
         }

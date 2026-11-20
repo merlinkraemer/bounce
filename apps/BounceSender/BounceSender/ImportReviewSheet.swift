@@ -18,6 +18,10 @@ struct ImportReviewSheet: View {
         return activeItemCount == 1 ? "Import 1 File" : "Import \(activeItemCount) Files"
     }
 
+    private var duplicateNoticeText: String {
+        totalFiles == 1 ? "Already in library" : "All \(totalFiles) files are already in the library"
+    }
+
     private var subtitle: String {
         let fileLabel = totalFiles == 1 ? "1 file" : "\(totalFiles) files"
         let trackLabel = totalTracks == 1 ? "1 track" : "\(totalTracks) tracks"
@@ -140,7 +144,11 @@ struct ImportReviewSheet: View {
             Divider()
 
             HStack(spacing: 12) {
-                if skippedCount > 0 {
+                if plan.isEntirelyExactDuplicates {
+                    Label(duplicateNoticeText, systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if skippedCount > 0 {
                     Text("\(skippedCount) skipped")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -414,6 +422,15 @@ private struct SingleFileImportSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if item.isExactDuplicate {
+                    Label("Already in library - nothing to import", systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else if item.isNearDuplicate {
+                    Label("Near-duplicate of a mix in the library", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -481,7 +498,7 @@ private struct FileRow: View {
 
                         if let tag = issueTag {
                             Text(tag.0)
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(tag.1)
                         }
                     }
@@ -527,7 +544,7 @@ private struct FileRow: View {
     }
 
     private var issueTag: (String, Color)? {
-        if item.isExactDuplicate { return ("(in library)", .secondary) }
+        if item.isExactDuplicate { return ("Already in library", .orange) }
         if item.isNearDuplicate { return ("(near-duplicate)", .orange) }
         if item.mixVsVersionAmbiguous { return ("(track or mix?)", .orange) }
         return nil

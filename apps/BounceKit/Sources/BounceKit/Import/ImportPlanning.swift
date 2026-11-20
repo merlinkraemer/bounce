@@ -85,6 +85,10 @@ public struct ImportPlan: Identifiable {
         groups.flatMap(\.items)
     }
 
+    public var isEntirelyExactDuplicates: Bool {
+        !allItems.isEmpty && allItems.allSatisfy(\.isExactDuplicate)
+    }
+
     public var hasUnresolvedSelections: Bool {
         groups.contains { $0.target.isUnresolved && !$0.activeItems.isEmpty }
     }
@@ -339,7 +343,37 @@ public struct ParsedImportTitle {
 
 // MARK: - ImportPlanning Namespace
 
+public enum VersionLabelStyle {
+    case decimal
+    case prefixed
+
+    func label(forNumber number: Int) -> String {
+        switch self {
+        case .decimal: return String(format: "%d.00", number)
+        case .prefixed: return "v\(number)"
+        }
+    }
+}
+
 public enum ImportPlanning {
+    public static func defaultVersionLabel(style: VersionLabelStyle, taken: Set<String>, versionCount: Int) -> String {
+        var number = max(versionCount + 1, 1)
+        while taken.contains(style.label(forNumber: number).lowercased()) { number += 1 }
+        return style.label(forNumber: number)
+    }
+
+    public static func prefillVersionLabels(in group: inout ImportPlanGroup, existingLabels: [String], style: VersionLabelStyle) {
+        var taken = Set(existingLabels.map { $0.lowercased() })
+        var versionCount = existingLabels.count
+        for index in group.items.indices where !group.items[index].skip {
+            if group.items[index].editableVersionLabel.isEmpty {
+                group.items[index].editableVersionLabel = defaultVersionLabel(style: style, taken: taken, versionCount: versionCount)
+            }
+            taken.insert(group.items[index].editableVersionLabel.lowercased())
+            versionCount += 1
+        }
+    }
+
 
     /// Suggest an optional recording day without changing the existing
     /// `YYMMDD_N` track-matching rules.

@@ -255,7 +255,7 @@ struct MainLibraryLayout<TransportBar: View, CatalogueControls: View>: View {
                     detailPane
                 }
                 .overlay(alignment: .topLeading) {
-                    if !isDetailsPresented {
+                    if !isDetailsPresented && !isNarrow {
                         InspectorToggleButton(
                             canInspect: inspectedVersion != nil,
                             isInspectorPresented: $isDetailsPresented
@@ -423,7 +423,7 @@ struct MainLibraryLayout<TransportBar: View, CatalogueControls: View>: View {
         let leadingBoundary = (measuredReserve > 0 && measuredReserve < measuredWidth)
             ? measuredReserve
             : catalogueLeadingReserve
-        let reservesInspectorToggle = inspectedVersion != nil && !isDetailsPresented
+        let reservesInspectorToggle = forcedPresentation == nil && inspectedVersion != nil && !isDetailsPresented
         let presentation = ToolbarPresentation.resolve(
             columnWidth: columnWidth,
             leadingReserve: effectiveReserve,
@@ -462,20 +462,6 @@ struct MainLibraryLayout<TransportBar: View, CatalogueControls: View>: View {
             .frame(maxWidth: BounceConstants.catalogueContentMaxWidth)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 12)
-
-            // Narrow workspaces have no split, so their host owns the toggle
-            // at the trailing edge. Wide layouts use the overlay in
-            // `workspaceContent`.
-            if forcedPresentation != nil {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    InspectorToggleButton(
-                        canInspect: reservesInspectorToggle,
-                        isInspectorPresented: $isDetailsPresented
-                    )
-                }
-                .padding(.horizontal, 12)
-            }
         }
         .frame(height: controlHostBandHeight)
     }

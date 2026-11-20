@@ -28,58 +28,53 @@ private struct TrackDetailContent: View {
 
     @Environment(AudioPlayer.self) private var audioPlayer
     @State private var voiceMemoPlayer = VoiceMemoPlayer()
-    /// Cached so VoiceMemoPlayer ticks don't regroup + fault notes every 0.1 s.
     @State private var noteSections: [NoteDateSection] = []
 
     var body: some View {
-        Group {
-            if !noteSections.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(noteSections) { section in
-                        Text(NoteDateGrouping.sectionTitle(for: section.day))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.4))
-                            .padding(.top, 4)
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(noteSections) { section in
+                Text(NoteDateGrouping.sectionTitle(for: section.day))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .padding(.top, 4)
 
-                        ForEach(section.notes) { note in
-                            if note.type == .voice {
-                                VoiceMemoPlaybackRow(
-                                    note: note,
-                                    player: voiceMemoPlayer,
-                                    isAvailable: isVoiceMemoAvailable(note),
-                                    onTogglePlayback: {
-                                        guard let voiceFilePath = resolvedVoiceFilePath(for: note) else { return }
-                                        audioPlayer.pause()
-                                        voiceMemoPlayer.toggle(noteID: note.id, filePath: voiceFilePath)
-                                    },
-                                    onPrepareSeek: {
-                                        guard let voiceFilePath = resolvedVoiceFilePath(for: note) else { return }
-                                        audioPlayer.pause()
-                                        voiceMemoPlayer.toggle(noteID: note.id, filePath: voiceFilePath)
-                                    },
-                                    onSeek: { time in
-                                        guard voiceMemoPlayer.playingNoteID == note.id else { return }
-                                        voiceMemoPlayer.seek(to: time)
-                                    },
-                                    onSeekToTrackTime: {
-                                        jumpToNoteTimestamp(note)
-                                    }
-                                )
-                            } else {
-                                TextNoteRow(
-                                    note: note,
-                                    onTap: {
-                                        jumpToNoteTimestamp(note)
-                                    }
-                                )
+                ForEach(section.notes) { note in
+                    if note.type == .voice {
+                        VoiceMemoPlaybackRow(
+                            note: note,
+                            player: voiceMemoPlayer,
+                            isAvailable: isVoiceMemoAvailable(note),
+                            onTogglePlayback: {
+                                guard let voiceFilePath = resolvedVoiceFilePath(for: note) else { return }
+                                audioPlayer.pause()
+                                voiceMemoPlayer.toggle(noteID: note.id, filePath: voiceFilePath)
+                            },
+                            onPrepareSeek: {
+                                guard let voiceFilePath = resolvedVoiceFilePath(for: note) else { return }
+                                audioPlayer.pause()
+                                voiceMemoPlayer.toggle(noteID: note.id, filePath: voiceFilePath)
+                            },
+                            onSeek: { time in
+                                guard voiceMemoPlayer.playingNoteID == note.id else { return }
+                                voiceMemoPlayer.seek(to: time)
+                            },
+                            onSeekToTrackTime: {
+                                jumpToNoteTimestamp(note)
                             }
-                        }
+                        )
+                    } else {
+                        TextNoteRow(
+                            note: note,
+                            onTap: {
+                                jumpToNoteTimestamp(note)
+                            }
+                        )
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
         .onAppear { refreshNoteSections() }
         .onChange(of: track.id) { _, _ in
             voiceMemoPlayer.stop()
@@ -91,17 +86,9 @@ private struct TrackDetailContent: View {
     }
 
     private func refreshNoteSections() {
-        let currentVersionID = audioPlayer.currentVersion?.id
-        // Show notes attached to the active version, plus legacy notes that
-        // were saved without a versionID so they remain reachable.
-        let scoped = track.visibleNotes.filter { note in
-            note.versionID == nil || note.versionID == currentVersionID
-        }
-        noteSections = NoteDateGrouping.grouped(scoped)
+        noteSections = NoteDateGrouping.grouped(track.visibleNotes(forVersion: audioPlayer.currentVersion?.id))
     }
 
-    /// Jump playback to the note's timestamp. Switches mix first when the note
-    /// belongs to a different version.
     private func jumpToNoteTimestamp(_ note: Note) {
         guard let timestamp = note.timestamp else { return }
         voiceMemoPlayer.stop()
@@ -132,8 +119,6 @@ private struct TrackDetailContent: View {
     }
 }
 
-/// Leaf that alone observes VoiceMemoPlayer tick fields for the active memo.
-/// Inactive rows only watch `playingNoteID`, so 10 Hz ticks don't rebuild the list.
 private struct VoiceMemoPlaybackRow: View {
     let note: Note
     let player: VoiceMemoPlayer

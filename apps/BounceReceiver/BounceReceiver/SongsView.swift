@@ -91,7 +91,7 @@ struct SongsView: View {
     }
 
     private var navigationTitle: String {
-        guard isSelectingTracks else { return "Songs" }
+        guard isSelectingTracks else { return "All Tracks" }
         switch selectedTrackIDs.count {
         case 0: return "Select Tracks"
         case 1: return "1 Selected"

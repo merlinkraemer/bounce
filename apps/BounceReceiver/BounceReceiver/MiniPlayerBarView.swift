@@ -16,6 +16,8 @@ struct MiniPlayerBar: View {
     private static let rubberBandFactor: CGFloat = 0.2
     private static let axisLockDistance: CGFloat = 8
     private static let edgeFadeWidth: CGFloat = 12
+    private static let openSwipeDistance: CGFloat = 30
+    private static let openSwipeVelocity: CGFloat = 300
 
     var body: some View {
         HStack(spacing: 0) {
@@ -101,6 +103,12 @@ struct MiniPlayerBar: View {
             }
             .onEnded { value in
                 defer { dragAxisIsHorizontal = nil }
+                if dragAxisIsHorizontal == false {
+                    if Self.isOpenSwipe(translation: value.translation.height, velocity: value.velocity.height) {
+                        onTap()
+                    }
+                    return
+                }
                 guard dragAxisIsHorizontal == true, !isCommitting else { return }
                 let width = value.translation.width
                 let velocity = value.velocity.width
@@ -114,6 +122,10 @@ struct MiniPlayerBar: View {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { dragOffset = 0 }
                 }
             }
+    }
+
+    private static func isOpenSwipe(translation: CGFloat, velocity: CGFloat) -> Bool {
+        translation < -openSwipeDistance || (translation < 0 && velocity < -openSwipeVelocity)
     }
 
     private func resistedOffset(for translation: CGFloat) -> CGFloat {

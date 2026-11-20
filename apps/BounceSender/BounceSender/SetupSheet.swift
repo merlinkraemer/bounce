@@ -644,6 +644,10 @@ private struct DownloadPanel: View {
             Text("iPhone beta on TestFlight")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
+            Text("Mac and iPhone need to be on the same Wi-Fi.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             HStack(spacing: 7) {
                 ProgressView().controlSize(.small)
                 Text("Looking for iPhones")

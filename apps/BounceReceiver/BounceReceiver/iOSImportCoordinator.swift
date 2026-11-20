@@ -100,13 +100,17 @@ final class iOSImportCoordinator {
             editableTrackName: parsed.detectedTrackName,
             items: [item]
         )
+        let existingLabels: [String]
         if case .existingTrack(let trackID) = group.target,
            let existingTrack = tracks.first(where: { $0.id == trackID }) {
+            existingLabels = existingTrack.versions.map(\.label)
             group.recordingDateString = existingTrack.recordingDateString
                 ?? ImportPlanning.inferRecordingDate(from: filename)
         } else {
+            existingLabels = []
             group.recordingDateString = ImportPlanning.inferRecordingDate(from: filename)
         }
+        ImportPlanning.prefillVersionLabels(in: &group, existingLabels: existingLabels, style: .prefixed)
 
         self.reviewAvailableTracks = availableTracks
         self.reviewGroup = group
@@ -208,7 +212,7 @@ final class iOSImportCoordinator {
             track = Track(name: trackName, origin: .phone)
             isNewTrack = true
             context.insert(track)
-            versionLabel = "v1"
+            versionLabel = ImportPlanning.defaultVersionLabel(style: .prefixed, taken: [], versionCount: 0)
             if let cover = group.selectedCoverArt {
                 track.setArtwork(cover)
             }
@@ -323,15 +327,11 @@ final class iOSImportCoordinator {
             return preferred
         }
 
-        var candidateNumber = max(track.versions.count + 1, 1)
-        var candidateLabel = "v\(candidateNumber)"
-
-        while existingLabels.contains(candidateLabel.lowercased()) {
-            candidateNumber += 1
-            candidateLabel = "v\(candidateNumber)"
-        }
-
-        return candidateLabel
+        return ImportPlanning.defaultVersionLabel(
+            style: .prefixed,
+            taken: existingLabels,
+            versionCount: track.versions.count
+        )
     }
 
     // MARK: - Audio Utilities

@@ -47,6 +47,10 @@ struct GetIPhoneAppView: View {
                 .frame(maxWidth: 320)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Text("Mac and iPhone need to be on the same Wi-Fi.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
             Text(BounceConstants.iPhoneAppURL)
                 .font(.caption)
                 .foregroundStyle(.secondary)

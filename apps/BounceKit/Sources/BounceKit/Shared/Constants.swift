@@ -24,6 +24,8 @@ public enum BounceConstants {
     /// Where the iPhone points users who have no Bounce on their Mac yet.
     /// "Send Link to Mac" shares it from the pair sheet.
     public static let macAppDownloadURL: URL? = URL(string: "https://onbounce.app")
+    public static let pairingLinkHost = "onbounce.app"
+    public static let pairingLinkPath = "/pair"
     public static let defaultHTTPPort: UInt16 = 0  // 0 = random port
 
     public static var isDevelopmentBuild: Bool {

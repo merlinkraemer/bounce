@@ -78,10 +78,68 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertEqual(parsed, link)
     }
 
-    func testProductionAndDevelopmentSchemes() {
-        XCTAssertEqual(makeLink(lane: .production).url.scheme, "bounce")
-        XCTAssertEqual(makeLink(lane: .development).url.scheme, "bounce-dev")
-        XCTAssertEqual(makeLink().url.host, "pair")
+    func testProductionIsUniversalLinkWithFragmentPayload() {
+        let url = makeLink(lane: .production).url
+        XCTAssertEqual(url.scheme, "https")
+        XCTAssertEqual(url.host, "onbounce.app")
+        XCTAssertEqual(url.path, "/pair")
+        XCTAssertNil(url.query)
+        XCTAssertTrue(url.fragment?.hasPrefix("v=1&i=") == true)
+    }
+
+    func testDevelopmentUsesCustomScheme() {
+        let url = makeLink(lane: .development).url
+        XCTAssertEqual(url.scheme, "bounce-dev")
+        XCTAssertEqual(url.host, "pair")
+    }
+
+    func testParsesHostVariantsAndTrailingSlash() throws {
+        let link = makeLink()
+        let fragment = link.url.fragment!
+        for prefix in ["https://onbounce.app/pair#", "https://ONBOUNCE.app/pair/#", "https://www.onbounce.app/pair#"] {
+            XCTAssertEqual(try PairingLink.parse(URL(string: prefix + fragment)!, lane: .production), link)
+        }
+    }
+
+    func testLegacyCustomSchemeStillParses() throws {
+        let link = makeLink()
+        let legacy = URL(string: "bounce://pair?" + link.url.fragment!)!
+        XCTAssertEqual(try PairingLink.parse(legacy, lane: .production), link)
+    }
+
+    func testNamesWithSpacesEmojiAndAmpersandRoundTrip() throws {
+        for name in ["Alex & Sam's Mac", "Studio Mac \u{1F3B9}", "a=b&c=d #1 100%", "Plus + Sign"] {
+            let link = makeLink(name: name)
+            XCTAssertEqual(try PairingLink.parse(link.url, lane: .production), link)
+        }
+    }
+
+    func testHttpsRejectsWrongHostOrPath() {
+        let fragment = makeLink().url.fragment!
+        for raw in [
+            "https://example.com/pair#" + fragment,
+            "https://onbounce.app/other#" + fragment,
+            "https://onbounce.app/pair/extra#" + fragment,
+            "https://evil.onbounce.app/pair#" + fragment
+        ] {
+            XCTAssertThrowsError(try PairingLink.parse(URL(string: raw)!, lane: .production)) {
+                XCTAssertEqual($0 as? PairingLinkError, .notAPairingLink)
+            }
+        }
+    }
+
+    func testHttpsPayloadInQueryIsMalformed() {
+        let query = makeLink().url.fragment!
+        XCTAssertThrowsError(try PairingLink.parse(URL(string: "https://onbounce.app/pair?" + query)!, lane: .production)) {
+            XCTAssertEqual($0 as? PairingLinkError, .malformed)
+        }
+    }
+
+    func testHttpsDuplicateKeyIsMalformed() {
+        let url = URL(string: makeLink().url.absoluteString + "&v=1")!
+        XCTAssertThrowsError(try PairingLink.parse(url, lane: .production)) {
+            XCTAssertEqual($0 as? PairingLinkError, .malformed)
+        }
     }
 
     func testDevLinkRoundTrip() throws {

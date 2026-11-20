@@ -747,7 +747,6 @@ struct PlayerSheetContent: View {
     @State private var trackToEdit: Track?
     @State private var trackToAddToPlaylist: Track?
     @State private var composerHeight: CGFloat = 60
-    /// Cached so body does not fault `visibleNotes` every pass (P9 / falls out of P2).
     @State private var hasVisibleNotes = false
 
     /// Grabber clearance below the top safe area. The hosting controller's
@@ -863,6 +862,9 @@ struct PlayerSheetContent: View {
         .onChange(of: audioPlayer.currentTrack?.visibleNotes.count) { _, _ in
             refreshHasVisibleNotes()
         }
+        .onChange(of: audioPlayer.currentVersion?.id) { _, _ in
+            refreshHasVisibleNotes()
+        }
         .onPreferenceChange(ComposerHeightPreferenceKey.self) { newHeight in
             if newHeight > 0 { composerHeight = newHeight }
         }
@@ -936,7 +938,7 @@ struct PlayerSheetContent: View {
     }
 
     private func refreshHasVisibleNotes() {
-        let next = !(audioPlayer.currentTrack?.visibleNotes.isEmpty ?? true)
+        let next = !(audioPlayer.currentTrack?.visibleNotes(forVersion: audioPlayer.currentVersion?.id).isEmpty ?? true)
         if hasVisibleNotes != next {
             hasVisibleNotes = next
         }

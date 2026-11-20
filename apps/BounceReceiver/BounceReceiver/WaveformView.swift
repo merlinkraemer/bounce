@@ -256,8 +256,8 @@ struct WaveformView: View {
             .onChange(of: viewHeight) { _, newHeight in
                 refreshWaveform(height: max(1, newHeight))
             }
-            .onChange(of: notes.count) { _, _ in
-                refreshMarkers()
+            .onChange(of: Self.markerTimes(for: notes), initial: true) { _, times in
+                markerTimes = times
             }
             .onChange(of: duration) { _, _ in
                 refreshLabels()
@@ -311,7 +311,6 @@ struct WaveformView: View {
                 unplayedBars = unplayed
                 playedBars = played
                 rasterScale = scale
-                refreshMarkers()
                 refreshLabels()
             }
         }
@@ -337,8 +336,8 @@ struct WaveformView: View {
         }
     }
 
-    private func refreshMarkers() {
-        markerTimes = notes.compactMap(\.timestamp).sorted()
+    private static func markerTimes(for notes: [Note]) -> [TimeInterval] {
+        notes.compactMap(\.timestamp).sorted()
     }
 
     private func refreshLabels() {

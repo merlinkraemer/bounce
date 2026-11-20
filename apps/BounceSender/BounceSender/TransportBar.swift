@@ -55,7 +55,6 @@ private struct TransportWaveform: View {
 
     var body: some View {
         WaveformScrubber(
-            transportState: transportState,
             samples: transportState.waveformSamples,
             duration: transportState.duration,
             noteTimestamps: transportState.noteTimestamps,

@@ -224,6 +224,10 @@ struct VoiceNoteRowContent: View {
     @State private var displayTime: TimeInterval = 0
     @State private var tickTimer: Timer?
     @State private var hasFile = false
+    @State private var samples: [Float]?
+    @State private var isLoadingSamples = false
+
+    private static let sampleCount = 120
 
     var body: some View {
         HStack(spacing: 8) {
@@ -243,9 +247,25 @@ struct VoiceNoteRowContent: View {
             .buttonStyle(.plain)
             .disabled(!hasFile)
 
-            Image(systemName: "waveform")
-                .font(.system(size: 11))
-                .foregroundStyle(hasFile ? .secondary : .tertiary)
+            if hasFile {
+                WaveformScrubber(
+                    samples: samples,
+                    duration: totalDuration,
+                    noteTimestamps: [],
+                    onSeek: seek,
+                    playheadTime: isPlaying ? displayTime : nil
+                )
+                .frame(height: 24)
+                .frame(maxWidth: .infinity)
+                .overlay {
+                    if isLoadingSamples {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
 
             Text(durationLabel)
                 .font(.system(size: 11, design: .monospaced))
@@ -255,18 +275,41 @@ struct VoiceNoteRowContent: View {
                 Text("syncing…")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
             }
-
-            Spacer(minLength: 0)
         }
         .task(id: note.voiceFilePath) {
             hasFile = fileExists(at: note.voiceFilePath)
+            await loadSamples()
         }
         .onDisappear { stopPlayback() }
     }
 
+    private var totalDuration: TimeInterval {
+        note.voiceDuration ?? player?.duration ?? 0
+    }
+
+    private func loadSamples() async {
+        samples = nil
+        guard hasFile, let path = note.voiceFilePath else { return }
+        isLoadingSamples = true
+        defer { isLoadingSamples = false }
+        let data = try? await WaveformProcessor().process(
+            fileURL: URL(fileURLWithPath: path),
+            sampleCount: Self.sampleCount
+        )
+        guard !Task.isCancelled else { return }
+        samples = data?.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
+    }
+
+    private func seek(to time: TimeInterval) {
+        if !isPlaying { startPlayback() }
+        player?.currentTime = time
+        displayTime = time
+    }
+
     private var durationLabel: String {
-        let total = note.voiceDuration ?? player?.duration ?? 0
+        let total = totalDuration
         if isPlaying {
             return "\(formatTime(displayTime)) / \(formatTime(total))"
         }

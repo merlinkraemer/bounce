@@ -8,7 +8,6 @@ PROJECT="$ROOT_DIR/apps/BounceSender/BounceSender.xcodeproj"
 SCHEME="BounceSender"
 PROD_BUNDLE_ID="com.merlinkraemer.bounce.sender"
 NOTARY_PROFILE="${BOUNCE_NOTARY_PROFILE:-bounce-notary}"
-DOWNLOAD_URL_PREFIX="${BOUNCE_DOWNLOAD_URL_PREFIX:-https://onbounce.app/releases/}"
 PLACEHOLDER_KEY="SPARKLE_PUBLIC_KEY"
 RELEASE_ROOT="$ROOT_DIR/build/release"
 WORK_DIR="$RELEASE_ROOT/work"
@@ -196,6 +195,7 @@ cp "$DMG" "$APPCAST_DIR/"
 if [[ "$DRY_RUN" == 1 ]]; then
   skipped "generate_appcast (signs with the Keychain EdDSA key)"
 else
+  DOWNLOAD_URL_PREFIX="${BOUNCE_DOWNLOAD_URL_PREFIX:-https://github.com/merlinkraemer/bounce/releases/download/v$VERSION/}"
   "$GENERATE_APPCAST" --download-url-prefix "$DOWNLOAD_URL_PREFIX" "$APPCAST_DIR"
   [[ -f "$APPCAST_DIR/appcast.xml" ]] || die "generate_appcast did not write appcast.xml."
 fi
@@ -210,13 +210,13 @@ cask "bounce" do
   version "$VERSION"
   sha256 "$DMG_SHA256"
 
-  url "https://github.com/merlinkraemer/bounce/releases/download/v#{version}/Bounce-#{version}.dmg"
+  url "https://onbounce.app/api/download?src=brew&v=#{version}"
   name "Bounce"
   desc "Music library for unfinished tracks, synced to your iPhone"
   homepage "https://onbounce.app"
 
   livecheck do
-    url :url
+    url "https://github.com/merlinkraemer/bounce"
     strategy :github_latest
   end
 
@@ -240,6 +240,6 @@ shasum -a 256 "$DMG"
 if [[ "$DRY_RUN" == 1 ]]; then
   echo "Dry run complete: nothing signed, notarized or appcast-signed."
 else
-  echo "Appcast: $APPCAST_DIR/appcast.xml (URL prefix $DOWNLOAD_URL_PREFIX)"
-  echo "Upload the DMG and appcast.xml to onbounce.app manually."
+  echo "Appcast: $APPCAST_DIR/appcast.xml (copy to site/appcast.xml and deploy the site)"
+  echo "Attach the DMGs to GitHub release v$VERSION first; appcast entries point there."
 fi

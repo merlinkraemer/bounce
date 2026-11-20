@@ -310,6 +310,7 @@ struct LibraryRowView: View {
         Button(action: onTogglePlayback) {
             Label("Play", systemImage: "play.fill")
         }
+        .disabled(isPending || isFailed)
 
         Button(action: onAddToQueue) {
             Label("Add to Queue", systemImage: "list.bullet")

@@ -306,12 +306,11 @@ private struct PlayerTransportSecondary: View {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.caption.weight(.semibold))
                 }
-                .foregroundStyle(.white.opacity(0.38))
+                .foregroundStyle(.white.opacity(0.7))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .modifier(LiquidGlassCapsule())
             }
-            .disabled(true)
 
             Spacer()
 

@@ -88,6 +88,7 @@
 		43324401F8E235E851A11C3A /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
 		440F7E5C7ECA9952B576128B /* WorkingTitleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkingTitleSheet.swift; sourceTree = "<group>"; };
 		465E2ACD7806536370E32604 /* InlineNoteWaveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InlineNoteWaveform.swift; sourceTree = "<group>"; };
+		4714DE7768B34D07E7818A28 /* BounceReceiver.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BounceReceiver.entitlements; sourceTree = "<group>"; };
 		476F78159301FCDE40B16440 /* TransferQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferQueue.swift; sourceTree = "<group>"; };
 		4BB0F5F4EB8D280EC3695BBE /* ConnectionStatusDot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionStatusDot.swift; sourceTree = "<group>"; };
 		5361BB23AB432802F06F1C1C /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
@@ -168,6 +169,7 @@
 				B2DF7E9246FB6EF093F49532 /* AudioDocumentPicker.swift */,
 				04E60A9A69B5BD9A35E790AD /* AudioPlayer.swift */,
 				6D57B76E123A51FD68AADD6F /* BounceButtons.swift */,
+				4714DE7768B34D07E7818A28 /* BounceReceiver.entitlements */,
 				C5B702E5BB85FFD68AA136A1 /* BounceReceiverApp.swift */,
 				4BB0F5F4EB8D280EC3695BBE /* ConnectionStatusDot.swift */,
 				0183E483E46B6CCA2AFC77BF /* CoverArtFormRow.swift */,
@@ -414,7 +416,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = PM5QWB5426;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -445,6 +447,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = BounceReceiver/BounceReceiver.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = BounceReceiver/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -461,6 +464,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = BounceReceiver/BounceReceiver.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = BounceReceiver/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -509,7 +513,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = PM5QWB5426;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

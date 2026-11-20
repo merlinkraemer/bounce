@@ -5,7 +5,6 @@ import BounceKit
 /// Note markers appear as small dots above the bars.
 /// Reads `currentTime` here so parent chrome is not invalidated 5×/s.
 struct WaveformScrubber: View {
-    let transportState: TransportState
     let samples: [Float]?
     let duration: TimeInterval
     let noteTimestamps: [TimeInterval]

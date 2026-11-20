@@ -289,16 +289,20 @@ final class ImportCoordinator {
             let suggestions = Set(groups[index].activeItems.compactMap {
                 ImportPlanning.inferRecordingDate(from: $0.originalFilename)
             })
+            let existingLabels: [String]
             if case .existingTrack(let trackID) = groups[index].target,
                let existingTrack = tracks.first(where: { $0.id == trackID }) {
+                existingLabels = existingTrack.versions.map(\.label)
                 // Show the persisted date for an existing track. A new filename
                 // suggestion must not visually imply that importing another
                 // version will replace established metadata.
                 groups[index].recordingDateString = existingTrack.recordingDateString
                     ?? (suggestions.count == 1 ? suggestions.first : nil)
             } else {
+                existingLabels = []
                 groups[index].recordingDateString = suggestions.count == 1 ? suggestions.first : nil
             }
+            ImportPlanning.prefillVersionLabels(in: &groups[index], existingLabels: existingLabels, style: .decimal)
         }
         return ImportPlan(availableTracks: availableTracks, groups: groups)
     }
@@ -764,13 +768,11 @@ final class ImportCoordinator {
             return "\(preferred) (\(n))"
         }
 
-        var candidateNumber = max(track.versions.count + alsoAvoiding.count + 1, 1)
-        var candidateLabel = String(format: "%d.00", candidateNumber)
-        while taken.contains(candidateLabel.lowercased()) {
-            candidateNumber += 1
-            candidateLabel = String(format: "%d.00", candidateNumber)
-        }
-        return candidateLabel
+        return ImportPlanning.defaultVersionLabel(
+            style: .decimal,
+            taken: taken,
+            versionCount: track.versions.count + alsoAvoiding.count
+        )
     }
 
     // MARK: - Audio Utilities

@@ -366,7 +366,7 @@ extension LibraryTrackTableView {
         @objc private func doubleClickedRow(_ sender: Any?) {
             guard let tableView else { return }
             let row = tableView.clickedRow >= 0 ? tableView.clickedRow : tableView.selectedRow
-            guard let snapshot = item(at: row)?.rowSnapshot else { return }
+            guard let snapshot = item(at: row)?.rowSnapshot, snapshot.processingState == .complete else { return }
             parent.onPlayFromStart(snapshot.versionID)
         }
 
@@ -667,7 +667,9 @@ extension LibraryTrackTableView {
                 return
             }
 
-            menu.addItem(NSMenuItem(title: "Play", symbol: "play.fill", action: #selector(playSelected(_:)), target: self))
+            let playItem = NSMenuItem(title: "Play", symbol: "play.fill", action: #selector(playSelected(_:)), target: self)
+            playItem.isEnabled = snapshot.processingState == .complete
+            menu.addItem(playItem)
             menu.addItem(NSMenuItem(title: "Add to Queue", symbol: "list.bullet", action: #selector(addSelectedToQueue(_:)), target: self))
 
             menu.addItem(.separator())

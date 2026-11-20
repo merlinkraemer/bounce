@@ -38,6 +38,11 @@ struct NowPlayingPaneView: View {
     @State private var errorMessage: String?
 
     private static let waveformHeight: CGFloat = 48
+
+    private struct WaveformTaskKey: Hashable {
+        let versionID: UUID?
+        let processingState: ProcessingState?
+    }
     private var isInspectedVersionLoaded: Bool {
         guard let version else { return false }
         return playbackEngine.loadedVersionID == version.id
@@ -113,7 +118,7 @@ struct NowPlayingPaneView: View {
             persistCurrentDraft()
         }
         .onChange(of: draftTimestamp) { _, _ in persistCurrentDraft() }
-        .task(id: version?.id) {
+        .task(id: WaveformTaskKey(versionID: version?.id, processingState: version?.processingState)) {
             await loadWaveform(for: version)
         }
     }
@@ -124,7 +129,6 @@ struct NowPlayingPaneView: View {
             detailHeader(track: track, version: version)
 
             WaveformScrubber(
-                transportState: transportState,
                 samples: waveformVersionID == version.id ? waveformSamples : nil,
                 duration: version.duration,
                 noteTimestamps: timedNotes.compactMap(\.timestamp),
@@ -147,14 +151,22 @@ struct NowPlayingPaneView: View {
                 selectedPosition: reviewPosition
             )
             .frame(height: Self.waveformHeight)
+            .allowsHitTesting(version.processingState == .complete)
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .overlay(alignment: .center) {
                 if waveformVersionID != version.id || waveformSamples == nil {
-                    Text("Waveform unavailable")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                        .allowsHitTesting(false)
+                    if version.processingState == .pending {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.7)
+                            .allowsHitTesting(false)
+                    } else {
+                        Text("Waveform unavailable")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
 
@@ -709,8 +721,23 @@ private struct MixNoteRow: View {
         }
     }
 
+    @ViewBuilder
     private var noteText: some View {
-        Text(note.content ?? "Voice note")
+        if note.type == .voice {
+            VoiceNoteRowContent(
+                note: note,
+                showTimestamp: false,
+                timestamp: timestamp ?? 0,
+                isActive: isActive
+            )
+            .frame(maxWidth: .infinity, minHeight: 20, alignment: .leading)
+        } else {
+            textNoteBody
+        }
+    }
+
+    private var textNoteBody: some View {
+        Text(note.content ?? "")
             .font(.system(size: 12))
             .foregroundStyle(isPreviousMix ? .secondary : .primary)
             .fixedSize(horizontal: false, vertical: true)
