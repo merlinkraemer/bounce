@@ -637,8 +637,7 @@ struct ContentView: View {
         }
         if let version {
             let track = tracks.first(where: { $0.versions.contains(where: { $0.id == versionID }) })
-            transportState.noteTimestamps = (track?.visibleNotes ?? [])
-                .filter { $0.versionID == version.id }
+            transportState.noteTimestamps = (track?.visibleNotes(forVersion: version.id) ?? [])
                 .compactMap(\.timestamp)
             refreshSparseWaveformIfNeeded(version)
         } else {

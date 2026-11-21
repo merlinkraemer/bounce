@@ -109,6 +109,10 @@ struct WaveformView: View {
                 : (audioPlayer.showFullScreenPlayer ? audioPlayer.playbackClock.time : frozenTime)
 
             ZStack {
+                if waveformData?.isEmpty ?? true {
+                    WaveformLoadingPlaceholder(barWidth: barWidth, barSpacing: barSpacing, bottomInset: 20)
+                        .frame(width: viewWidth, height: viewHeight)
+                }
                 Canvas { context, size in
                     let availableHeight = size.height - 20
                     let tx = viewWidth / 2 - timeToX(now, totalW: totalW)

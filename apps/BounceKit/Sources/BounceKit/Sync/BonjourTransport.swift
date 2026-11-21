@@ -353,6 +353,8 @@ public final class BonjourTransport: SyncTransport {
     private var pairFailureHistory: [UUID: [Date]] = [:]
     private var pairingTokenIssuer = PairingTokenIssuer()
     private var pairingLinkRotationTask: Task<Void, Never>? = nil
+    private var senderPathMonitor: NWPathMonitor? = nil
+    private var directFallbackTask: Task<Void, Never>? = nil
     private static let pairFailureLimit = 5
     private static let pairFailureWindow: TimeInterval = 60
 
@@ -430,6 +432,7 @@ public final class BonjourTransport: SyncTransport {
         case .sender:
             startHTTPServer()
             publishPairingLink()
+            startSenderPathMonitor()
         case .receiver:
             if isPaired {
                 connectionState = .disconnected
@@ -447,6 +450,10 @@ public final class BonjourTransport: SyncTransport {
         pairingLinkRotationTask?.cancel()
         pairingLinkRotationTask = nil
         pairingLink = nil
+        senderPathMonitor?.cancel()
+        senderPathMonitor = nil
+        directFallbackTask?.cancel()
+        directFallbackTask = nil
         connectTimeoutTask?.cancel()
         connectTimeoutTask = nil
         browserTimeoutTask?.cancel()
@@ -500,6 +507,67 @@ public final class BonjourTransport: SyncTransport {
         }
         SyncLog.receiver.info("triggerReconnect: starting time-boxed browse")
         startBrowsing(triggered: true)
+        scheduleDirectFallback()
+    }
+
+    private static let directFallbackDelay: UInt64 = 3_000_000_000
+
+    @discardableResult
+    private func scheduleDirectFallback(after delay: UInt64 = BonjourTransport.directFallbackDelay) -> Bool {
+        guard let peer = bondedPeerStore?.peers.first,
+              let route = DirectSenderRoute.load(), route.macDeviceID == peer.id else { return false }
+        directFallbackTask?.cancel()
+        directFallbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard let self, !Task.isCancelled,
+                  self.senderEndpoint == nil, !self.isConnecting, !self.autoConnectPaused else { return }
+            self.isConnecting = true
+            let connected = await self.connectDirectly(route, deviceName: peer.name)
+            guard !Task.isCancelled, !connected else { return }
+            self.isConnecting = false
+            self.retryFromCurrentResults()
+        }
+        return true
+    }
+
+    private func retryAfterBonjourConnectFailure() {
+        if !scheduleDirectFallback(after: 0) {
+            retryFromCurrentResults()
+        }
+    }
+
+    private func connectDirectly(_ route: DirectSenderRoute, deviceName: String?) async -> Bool {
+        SyncLog.discovery.info("trying direct route \(route.hosts.joined(separator: ","), privacy: .public) port \(route.port)")
+        guard let endpoint = await Self.firstVerifiedEndpoint(in: route) else {
+            SyncLog.discovery.info("direct route unreachable or not the paired Mac")
+            return false
+        }
+        guard !Task.isCancelled else { return false }
+        adoptSenderEndpoint(endpoint, path: nil, deviceName: deviceName, deviceID: route.macDeviceID)
+        return senderEndpoint != nil
+    }
+
+    nonisolated private static func firstVerifiedEndpoint(in route: DirectSenderRoute) async -> NWEndpoint? {
+        let expectedID = route.macDeviceID
+        return await withTaskGroup(of: NWEndpoint?.self) { group in
+            for endpoint in route.endpoints {
+                group.addTask {
+                    guard let response = try? await NWHTTPClient.request(
+                        endpoint: endpoint, method: "GET", path: "/identity", timeout: 3
+                    ), response.statusCode == 200,
+                          let identity = try? JSONDecoder().decode(SenderIdentity.self, from: response.body),
+                          identity.deviceID == expectedID else { return nil }
+                    return endpoint
+                }
+            }
+            for await endpoint in group {
+                if let endpoint {
+                    group.cancelAll()
+                    return endpoint
+                }
+            }
+            return nil
+        }
     }
 
     /// Receiver-side: start discovery on explicit user request (opening the pairing UI).
@@ -654,9 +722,13 @@ public final class BonjourTransport: SyncTransport {
         params.allowLocalEndpointReuse = true
         params.includePeerToPeer = true
 
-        guard let listener = try? NWListener(using: params, on: NWEndpoint.Port(rawValue: BounceConstants.defaultHTTPPort)!) else {
+        let stickyPort = UInt16(exactly: UserDefaults.standard.integer(forKey: BouncePreferenceKey.senderListenerPort))
+            .flatMap { $0 == 0 ? nil : $0 }
+        let requestedPort = stickyPort ?? BounceConstants.defaultHTTPPort
+        guard let listener = try? NWListener(using: params, on: NWEndpoint.Port(rawValue: requestedPort)!) else {
             connectionState = .disconnected
-            SyncLog.sender.error("failed to create NWListener")
+            SyncLog.sender.error("failed to create NWListener on port \(requestedPort)")
+            UserDefaults.standard.removeObject(forKey: BouncePreferenceKey.senderListenerPort)
             scheduleListenerRestart()
             return
         }
@@ -670,11 +742,14 @@ public final class BonjourTransport: SyncTransport {
                     self.listenerRestartAttempt = 0
                     if let port = listener.port {
                         SyncLog.sender.info("listener ready on port \(port.rawValue)")
+                        UserDefaults.standard.set(Int(port.rawValue), forKey: BouncePreferenceKey.senderListenerPort)
                         self.advertiseBonjour(port: port.rawValue)
+                        self.publishPairingLink()
                     }
                 case .failed(let error):
                     SyncLog.sender.error("listener failed: \(error.localizedDescription, privacy: .public)")
                     guard self.listener === listener else { return }
+                    UserDefaults.standard.removeObject(forKey: BouncePreferenceKey.senderListenerPort)
                     listener.cancel()
                     self.listener = nil
                     self.connectionState = .disconnected
@@ -825,6 +900,11 @@ public final class BonjourTransport: SyncTransport {
                 }
                 self.handlePairRequest(bodyData: completeBody, connection: connection, headers: headers)
             }
+            return
+        }
+
+        if path == "/identity" && method == "GET" {
+            sendJSON(connection, status: 200, statusText: "OK", payload: SenderIdentity(deviceID: deviceID, deviceName: deviceName))
             return
         }
 
@@ -1129,13 +1209,31 @@ public final class BonjourTransport: SyncTransport {
 
     private func publishPairingLink() {
         pairingTokenIssuer.rotateIfExpired()
-        pairingLink = PairingLink(
+        let link = PairingLink(
             macDeviceID: deviceID,
             macName: deviceName,
             token: pairingTokenIssuer.token,
-            expiresAt: pairingTokenIssuer.expiresAt
+            expiresAt: pairingTokenIssuer.expiresAt,
+            hosts: LocalNetworkAddresses.current(),
+            port: listener?.port?.rawValue
         )
+        if pairingLink != link {
+            pairingLink = link
+        }
         schedulePairingLinkRotation()
+    }
+
+    private func startSenderPathMonitor() {
+        guard senderPathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.pairingLink != nil else { return }
+                self.publishPairingLink()
+            }
+        }
+        monitor.start(queue: networkQueue)
+        senderPathMonitor = monitor
     }
 
     private func schedulePairingLinkRotation() {
@@ -2032,7 +2130,7 @@ public final class BonjourTransport: SyncTransport {
             self.senderEndpoint = nil
             self.connectionPathLabel = nil
             self.isConnecting = false
-            self.retryFromCurrentResults()
+            self.retryAfterBonjourConnectFailure()
         }
 
         connection.stateUpdateHandler = { [weak self] state in
@@ -2069,7 +2167,7 @@ public final class BonjourTransport: SyncTransport {
                     self.connectedDeviceID = nil
                     self.connectedAppVersion = nil
                     self.isConnecting = false
-                    self.retryFromCurrentResults()
+                    self.retryAfterBonjourConnectFailure()
                 case .cancelled:
                     self.connectTimeoutTask?.cancel()
                     self.resolvedBootstrapConnectionIDs.remove(connectionID)
@@ -2094,6 +2192,8 @@ public final class BonjourTransport: SyncTransport {
         SyncLog.receiver.info("stopping receiver connections: \(reason, privacy: .public)")
         connectTimeoutTask?.cancel()
         connectTimeoutTask = nil
+        directFallbackTask?.cancel()
+        directFallbackTask = nil
         for connection in activeConnections { connection.cancel() }
         activeConnections.removeAll()
         senderBaseURL = nil
@@ -2309,7 +2409,12 @@ public final class BonjourTransport: SyncTransport {
     /// to the user in the confirmation sheet — the Mac will derive the
     /// same code from this nonce + our deviceID and display it for the
     /// user to compare visually.
-    public func pair(with peer: DiscoveredPeer, nonce: Data, pairingToken: String? = nil) async throws -> BondedPeer {
+    public func pair(
+        with peer: DiscoveredPeer,
+        nonce: Data,
+        pairingToken: String? = nil,
+        onReachable: () -> Void = {}
+    ) async throws -> BondedPeer {
         guard role == .receiver else {
             throw SyncError.pairingFailed("pair() can only be called on a receiver")
         }
@@ -2333,6 +2438,7 @@ public final class BonjourTransport: SyncTransport {
         connectionState = .pairing
         connectToSender(result)
         try await waitForConnectionReady(timeout: 8)
+        onReachable()
 
         let bonded = try await performPairHandshake(
             expectedPeerID: peer.id,
@@ -2341,6 +2447,90 @@ public final class BonjourTransport: SyncTransport {
             pairingToken: pairingToken
         )
         return bonded
+    }
+
+    private static let linkDirectFirstAttemptDelay: TimeInterval = 1.5
+    private static let linkDirectRetryInterval: TimeInterval = 4
+
+    /// Pairs with the Mac from its QR link. Uses Bonjour when the Mac shows up
+    /// there, and the link's direct addresses when it does not (iPhone
+    /// hotspot). Returns nil when the Mac was not reachable before `timeout`.
+    /// The Mac's identity is checked before the token is sent, and the pair
+    /// response must carry the link's Mac device ID.
+    public func pair(
+        with link: PairingLink,
+        nonce: Data,
+        timeout: TimeInterval = 20,
+        onReachable: () -> Void = {}
+    ) async throws -> BondedPeer? {
+        guard role == .receiver else {
+            throw SyncError.pairingFailed("pair() can only be called on a receiver")
+        }
+        let start = Date()
+        var nextDirectAttempt = start.addingTimeInterval(Self.linkDirectFirstAttemptDelay)
+        var bonjourUnreachable = false
+        while Date().timeIntervalSince(start) < timeout {
+            try Task.checkCancellation()
+            if !bonjourUnreachable, let peer = discoveredPeers.first(where: { $0.id == link.macDeviceID }) {
+                var reached = false
+                do {
+                    let bonded = try await pair(with: peer, nonce: nonce, pairingToken: link.token, onReachable: {
+                        reached = true
+                        onReachable()
+                    })
+                    saveDirectRoute(after: link)
+                    return bonded
+                } catch let error where !reached && !(error is CancellationError) && link.directRoute != nil {
+                    SyncLog.discovery.info("Bonjour pair connection failed (\(error.localizedDescription, privacy: .public)); trying the link's direct route")
+                    bonjourUnreachable = true
+                    nextDirectAttempt = Date()
+                }
+            }
+            if let route = link.directRoute, Date() >= nextDirectAttempt {
+                stopReceiverConnections(reason: "direct pair from link")
+                connectionState = .pairing
+                isConnecting = true
+                if await connectDirectly(route, deviceName: link.macName) {
+                    onReachable()
+                    let bonded = try await performPairHandshake(
+                        expectedPeerID: link.macDeviceID,
+                        expectedPeerName: link.macName,
+                        nonce: nonce,
+                        pairingToken: link.token
+                    )
+                    saveDirectRoute(after: link)
+                    return bonded
+                }
+                isConnecting = false
+                connectionState = browser == nil ? .disconnected : .searching
+                nextDirectAttempt = Date().addingTimeInterval(Self.linkDirectRetryInterval)
+            }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+        return nil
+    }
+
+    private func saveDirectRoute(after link: PairingLink) {
+        guard let linkRoute = link.directRoute else { return }
+        let current = DirectSenderRoute.load().flatMap { $0.macDeviceID == link.macDeviceID ? $0 : nil }
+        DirectSenderRoute(
+            macDeviceID: link.macDeviceID,
+            hosts: (current?.hosts ?? []) + linkRoute.hosts,
+            port: current?.port ?? linkRoute.port
+        ).save()
+    }
+
+    private func refreshDirectRoute(host: NWEndpoint.Host, port: NWEndpoint.Port, deviceID: UUID?) {
+        guard role == .receiver, let deviceID, bondedPeerStore?.contains(id: deviceID) == true else { return }
+        var ipv4: String? = nil
+        if case .ipv4 = host {
+            ipv4 = "\(host)".components(separatedBy: "%").first
+        }
+        let existing = DirectSenderRoute.load().flatMap { $0.macDeviceID == deviceID ? $0 : nil }
+        let route = (existing ?? DirectSenderRoute(macDeviceID: deviceID, hosts: [], port: port.rawValue))
+            .preferring(ipv4, port: port.rawValue)
+        guard !route.hosts.isEmpty, route != existing else { return }
+        route.save()
     }
 
     /// Wait until `senderEndpoint` is set or the timeout expires.
@@ -2409,6 +2599,9 @@ public final class BonjourTransport: SyncTransport {
             sharedKey: sharedKey
         )
         bondedPeerStore?.bond(bonded)
+        if case let .hostPort(host, port) = senderEndpoint {
+            refreshDirectRoute(host: host, port: port, deviceID: bonded.id)
+        }
         // Ensure subsequent receiver requests always carry the bonded key,
         // even if browse metadata did not include a deviceID.
         connectedDeviceID = bonded.id
@@ -2576,10 +2769,18 @@ public final class BonjourTransport: SyncTransport {
             connection.cancel()
         }
 
-        guard let path = connection.currentPath,
-              let remoteEndpoint = path.remoteEndpoint,
-              case let .hostPort(host, port) = remoteEndpoint else {
+        guard let path = connection.currentPath, let remoteEndpoint = path.remoteEndpoint else {
             SyncLog.discovery.error("failed to resolve remote endpoint")
+            connectionState = .disconnected
+            isConnecting = false
+            return
+        }
+        adoptSenderEndpoint(remoteEndpoint, path: path, deviceName: deviceName, deviceID: deviceID)
+    }
+
+    private func adoptSenderEndpoint(_ remoteEndpoint: NWEndpoint, path: NWPath?, deviceName: String?, deviceID: UUID?) {
+        guard case let .hostPort(host, port) = remoteEndpoint else {
+            SyncLog.discovery.error("remote endpoint is not host:port")
             connectionState = .disconnected
             isConnecting = false
             return
@@ -2615,6 +2816,7 @@ public final class BonjourTransport: SyncTransport {
         senderBaseURL = url
         lastSenderBaseURL = url
         connectionPathLabel = NWPathLabel.from(path: path)
+        refreshDirectRoute(host: host, port: port, deviceID: deviceID)
         connectedDeviceName = deviceName
         connectedDeviceID = deviceID
         connectedAppVersion = nil

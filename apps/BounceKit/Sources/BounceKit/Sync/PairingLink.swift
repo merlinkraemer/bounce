@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Security
 
 public enum PairingLane: Sendable, Equatable {
@@ -29,14 +30,20 @@ public enum PairingLinkError: Error, Equatable {
 /// Production QRs are universal links with the payload in the URL fragment, so
 /// the token and Mac name never reach the web server. Development QRs and Mac
 /// 1.0.0 QRs use the custom scheme with the payload as the query.
+/// `hosts` and `port` are optional direct addresses of the Mac's sync listener
+/// for networks where Bonjour does not reach the phone (iPhone hotspot). Apps
+/// that predate them ignore the extra keys.
 public struct PairingLink: Equatable, Hashable, Sendable, Identifiable {
     public static let currentVersion = 1
+    public static let maxHostCount = 4
 
     public let version: Int
     public let macDeviceID: UUID
     public let macName: String
     public let token: String
     public let expiresAt: Date
+    public let hosts: [String]
+    public let port: UInt16?
     public let lane: PairingLane
 
     public var id: String { token }
@@ -47,6 +54,8 @@ public struct PairingLink: Equatable, Hashable, Sendable, Identifiable {
         macName: String,
         token: String,
         expiresAt: Date,
+        hosts: [String] = [],
+        port: UInt16? = nil,
         lane: PairingLane = .current
     ) {
         self.version = version
@@ -54,7 +63,20 @@ public struct PairingLink: Equatable, Hashable, Sendable, Identifiable {
         self.macName = macName
         self.token = token
         self.expiresAt = expiresAt
+        let validHosts = Array(hosts.filter(Self.isDirectHost).prefix(Self.maxHostCount))
+        let validPort = port.flatMap { $0 == 0 ? nil : $0 }
+        self.hosts = validPort == nil ? [] : validHosts
+        self.port = validHosts.isEmpty ? nil : validPort
         self.lane = lane
+    }
+
+    public var directRoute: DirectSenderRoute? {
+        guard let port, !hosts.isEmpty else { return nil }
+        return DirectSenderRoute(macDeviceID: macDeviceID, hosts: hosts, port: port)
+    }
+
+    static func isDirectHost(_ host: String) -> Bool {
+        IPv4Address(host) != nil || (IPv6Address(host) != nil && !host.contains("%"))
     }
 
     public func isExpired(at date: Date = .now) -> Bool {
@@ -68,6 +90,14 @@ public struct PairingLink: Equatable, Hashable, Sendable, Identifiable {
             URLQueryItem(name: "n", value: macName),
             URLQueryItem(name: "t", value: token),
             URLQueryItem(name: "e", value: String(Int(expiresAt.timeIntervalSince1970)))
+        ] + directQueryItems
+    }
+
+    private var directQueryItems: [URLQueryItem] {
+        guard let port, !hosts.isEmpty else { return [] }
+        return [
+            URLQueryItem(name: "h", value: hosts.joined(separator: ",")),
+            URLQueryItem(name: "p", value: String(port))
         ]
     }
 
@@ -133,6 +163,8 @@ public struct PairingLink: Equatable, Hashable, Sendable, Identifiable {
             macName: macName,
             token: token,
             expiresAt: Date(timeIntervalSince1970: expiry),
+            hosts: values["h"]?.split(separator: ",").map(String.init) ?? [],
+            port: values["p"].flatMap(UInt16.init),
             lane: lane
         )
     }

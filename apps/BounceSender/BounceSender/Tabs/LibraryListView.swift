@@ -82,7 +82,7 @@ struct LibraryListView: View {
                 hasher.combine(version.id)
                 hasher.combine(version.label)
                 hasher.combine(version.addedAt)
-                hasher.combine(track.visibleNotes.filter { $0.versionID == version.id }.count)
+                hasher.combine(track.visibleNotes(forVersion: version.id).count)
             }
         }
         return hasher.finalize()
@@ -169,7 +169,7 @@ struct LibraryListView: View {
             processingState: version.processingState,
             isReleased: track.isReleased,
             rowKind: rowKind,
-            noteCount: track.visibleNotes.filter { $0.versionID == version.id }.count,
+            noteCount: track.visibleNotes(forVersion: version.id).count,
             isViewingOlderVersion: rowKind == .parent
                 && inspectedVersionID != version.id
                 && track.versions.contains(where: { $0.id == inspectedVersionID }),

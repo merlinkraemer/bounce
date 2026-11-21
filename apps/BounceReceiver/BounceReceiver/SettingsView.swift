@@ -187,6 +187,7 @@ struct SyncDetailView: View {
     @State private var pendingNonce: Data? = nil
     @State private var pairError: String? = nil
     @State private var isPairing = false
+    @State private var showsScanner = false
     @State private var peerToForget: BondedPeer? = nil
     @State private var showForgetAlert = false
 
@@ -227,6 +228,14 @@ struct SyncDetailView: View {
                     onCancel: cancelPair
                 )
             }
+        }
+        .sheet(isPresented: $showsScanner) {
+            PairMacSheet(
+                startsWithScanner: true,
+                onPaired: { showsScanner = false },
+                onCancel: { showsScanner = false }
+            )
+            .presentationDetents([.large])
         }
         .alert("Forget Device?", isPresented: $showForgetAlert) {
             Button("Cancel", role: .cancel) {
@@ -380,11 +389,24 @@ struct SyncDetailView: View {
         } footer: {
             Text("Open Bounce on your Mac, then select it here.")
         }
+        scanSection
         Section {
             GetMacAppHint(isMacFound: !unbonded.isEmpty)
         }
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
+    }
+
+    private var scanSection: some View {
+        Section {
+            Button {
+                showsScanner = true
+            } label: {
+                Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+            }
+        } footer: {
+            Text("Scan the code in Bounce on your Mac. Works on the iPhone\u{2019}s hotspot too.")
+        }
     }
 
     // MARK: - Actions

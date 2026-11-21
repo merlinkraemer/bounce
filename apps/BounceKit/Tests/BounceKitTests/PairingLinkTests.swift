@@ -193,4 +193,102 @@ final class PairingLinkTests: XCTestCase {
     func testPayloadStaysSmallEnoughForQR() {
         XCTAssertLessThan(makeLink().url.absoluteString.utf8.count, 160)
     }
+
+    private func makeDirectLink(lane: PairingLane = .production) -> PairingLink {
+        PairingLink(
+            macDeviceID: macID,
+            macName: "Alex\u{2019}s MacBook Pro",
+            token: PairingToken.generate(),
+            expiresAt: now.addingTimeInterval(300),
+            hosts: ["192.168.178.23", "172.20.10.2"],
+            port: 54123,
+            lane: lane
+        )
+    }
+
+    func testDirectAddressesRoundTripInBothLanes() throws {
+        for lane in [PairingLane.production, .development] {
+            let link = makeDirectLink(lane: lane)
+            let parsed = try PairingLink.parse(link.url, lane: lane)
+            XCTAssertEqual(parsed, link)
+            XCTAssertEqual(parsed.hosts, ["192.168.178.23", "172.20.10.2"])
+            XCTAssertEqual(parsed.port, 54123)
+            XCTAssertEqual(parsed.directRoute, DirectSenderRoute(macDeviceID: macID, hosts: parsed.hosts, port: 54123))
+        }
+    }
+
+    func testOldLinkWithoutAddressesParsesAsBonjourOnly() throws {
+        let token = PairingToken.generate()
+        let old = URL(string: "https://onbounce.app/pair#v=1&i=\(macID.uuidString)&n=Studio&t=\(token)&e=1800000300")!
+        let parsed = try PairingLink.parse(old, lane: .production)
+        XCTAssertEqual(parsed.hosts, [])
+        XCTAssertNil(parsed.port)
+        XCTAssertNil(parsed.directRoute)
+        XCTAssertEqual(parsed.token, token)
+    }
+
+    func testNewLinkStillParsesWithOneZeroRules() throws {
+        let link = makeDirectLink()
+        let legacy = try XCTUnwrap(Self.parseWithOneZeroRules(link.url))
+        XCTAssertEqual(legacy.id, macID)
+        XCTAssertEqual(legacy.name, link.macName)
+        XCTAssertEqual(legacy.token, link.token)
+    }
+
+    func testLinkWithoutAddressesOmitsDirectKeys() {
+        let fragment = makeLink().url.fragment!
+        XCTAssertFalse(fragment.contains("h="))
+        XCTAssertFalse(fragment.contains("p="))
+        let portless = PairingLink(macDeviceID: macID, macName: "Mac", token: PairingToken.generate(),
+                                   expiresAt: now, hosts: ["10.0.0.2"], port: nil, lane: .production)
+        XCTAssertEqual(portless.hosts, [])
+        XCTAssertFalse(portless.url.fragment!.contains("h="))
+    }
+
+    func testInvalidDirectValuesAreDroppedNotFatal() throws {
+        let base = makeLink().url.absoluteString
+        let badHosts = try PairingLink.parse(URL(string: base + "&h=evil.example.com,10.0.0.7,fe80::1%25en0&p=8080")!, lane: .production)
+        XCTAssertEqual(badHosts.hosts, ["10.0.0.7"])
+        XCTAssertEqual(badHosts.port, 8080)
+        let badPort = try PairingLink.parse(URL(string: base + "&h=10.0.0.7&p=99999")!, lane: .production)
+        XCTAssertNil(badPort.directRoute)
+        let zeroPort = try PairingLink.parse(URL(string: base + "&h=10.0.0.7&p=0")!, lane: .production)
+        XCTAssertNil(zeroPort.directRoute)
+    }
+
+    func testHostListIsCapped() {
+        let link = PairingLink(macDeviceID: macID, macName: "Mac", token: PairingToken.generate(), expiresAt: now,
+                               hosts: (1...9).map { "10.0.0.\($0)" }, port: 1234, lane: .production)
+        XCTAssertEqual(link.hosts.count, PairingLink.maxHostCount)
+    }
+
+    func testPayloadWithAddressesStaysSmallEnoughForQR() {
+        let link = PairingLink(macDeviceID: macID, macName: "Alex\u{2019}s MacBook Pro", token: PairingToken.generate(),
+                               expiresAt: now, hosts: ["192.168.178.123", "172.20.10.12", "10.100.200.250", "192.168.2.200"],
+                               port: 65000, lane: .production)
+        XCTAssertLessThan(link.url.absoluteString.utf8.count, 260)
+    }
+
+    private struct OneZeroPayload {
+        let id: UUID
+        let name: String
+        let token: String
+    }
+
+    private static func parseWithOneZeroRules(_ url: URL) -> OneZeroPayload? {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        var fragment = URLComponents()
+        fragment.percentEncodedQuery = components.percentEncodedFragment
+        var values: [String: String] = [:]
+        for item in fragment.queryItems ?? [] {
+            guard let value = item.value, values[item.name] == nil else { return nil }
+            values[item.name] = value
+        }
+        guard values["v"] == "1",
+              let id = values["i"].flatMap(UUID.init(uuidString:)),
+              let name = values["n"], !name.isEmpty,
+              let token = values["t"], PairingToken.isWellFormed(token),
+              values["e"].flatMap(TimeInterval.init) != nil else { return nil }
+        return OneZeroPayload(id: id, name: name, token: token)
+    }
 }

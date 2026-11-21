@@ -34,6 +34,8 @@ final class PreferenceKeyTests: XCTestCase {
         XCTAssertEqual(BouncePreferenceKey.legacySenderDeviceID, "com.bounce.senderID")
         XCTAssertEqual(BouncePreferenceKey.autoConnectPaused, "com.bounce.autoConnectPaused")
         XCTAssertEqual(BouncePreferenceKey.receiverDeviceName, "com.bounce.sync.receiverDeviceName")
+        XCTAssertEqual(BouncePreferenceKey.senderListenerPort, "com.bounce.sync.senderListenerPort")
+        XCTAssertEqual(BouncePreferenceKey.directSenderRoute, "com.bounce.sync.directSenderRoute")
     }
 
     func testBooleanRoundTripAndDefaultWhenUnset() {

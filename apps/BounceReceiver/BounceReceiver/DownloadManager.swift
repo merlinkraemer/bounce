@@ -22,6 +22,7 @@ final class DownloadManager {
     private var periodicSyncTask: Task<Void, Never>? = nil
     private var pairStatusTask: Task<Void, Never>? = nil
     private var activeSyncTask: Task<Void, Never>? = nil
+    private var manualSyncRequestedDuringActiveSync = false
     private var activeSyncLeaseID: Int? = nil
     private var notePushTask: Task<Void, Never>? = nil
     private var refreshStatusTask: Task<Void, Never>? = nil
@@ -398,6 +399,16 @@ final class DownloadManager {
     /// the confirmation sheet.
     func pair(with peer: DiscoveredPeer, nonce: Data, pairingToken: String? = nil) async throws {
         _ = try await transport.pair(with: peer, nonce: nonce, pairingToken: pairingToken)
+        await didPair()
+    }
+
+    func pair(with link: PairingLink, nonce: Data, onReachable: () -> Void) async throws -> Bool {
+        guard try await transport.pair(with: link, nonce: nonce, onReachable: onReachable) != nil else { return false }
+        await didPair()
+        return true
+    }
+
+    private func didPair() async {
         UserDefaults.standard.set(true, forKey: ReceiverAppStorageKeys.hasEverPairedReceiverDevice)
         await handleTransportStateChange(transport.connectionState, senderID: transport.connectedDeviceID)
         await requestSync(trigger: .connected, waitForCompletion: false)
@@ -599,6 +610,7 @@ final class DownloadManager {
             activeSyncTask = nil
             activeSyncLeaseID = nil
             isSyncing = false
+            manualSyncRequestedDuringActiveSync = false
         }
 
         periodicSyncTask?.cancel()
@@ -708,6 +720,9 @@ final class DownloadManager {
         }
 
         if let activeSyncTask {
+            if trigger == .manual {
+                manualSyncRequestedDuringActiveSync = true
+            }
             if waitForCompletion {
                 await activeSyncTask.value
             }
@@ -736,13 +751,20 @@ final class DownloadManager {
         lastSyncError = nil
         refreshSyncStatusPresentation()
         defer {
+            let runFollowUpManualSync = activeSyncLeaseID == lease.id && manualSyncRequestedDuringActiveSync
             if activeSyncLeaseID == lease.id {
                 isSyncing = false
                 activeSyncTask = nil
                 activeSyncLeaseID = nil
+                manualSyncRequestedDuringActiveSync = false
             }
             refreshSyncStatusPresentation()
-            Task { await coordinator.finishSync(lease) }
+            Task {
+                await coordinator.finishSync(lease)
+                if runFollowUpManualSync {
+                    await requestSync(trigger: .manual, waitForCompletion: false)
+                }
+            }
         }
 
         // Steady-state 10s polls hit the tiny GET /generation first and skip

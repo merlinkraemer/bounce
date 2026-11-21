@@ -22,19 +22,43 @@ final class TrackVersionNotesTests: XCTestCase {
         return note
     }
 
-    func testScopesToVersionPlusUnversionedAndSkipsDeleted() throws {
+    private func addVersion(to track: Track, addedAt: Date) -> Version {
+        let version = Version(trackID: track.id, label: "v", filePath: "p", fileSize: 0, fileFormat: "wav", originalFilename: "f", duration: 1, addedAt: addedAt)
+        context.insert(version)
+        track.versions.append(version)
+        return version
+    }
+
+    func testScopesToVersionAndPutsUnversionedOnFirstVersionOnly() throws {
         let track = Track(name: "4")
         context.insert(track)
-        let v1 = UUID(), v3 = UUID()
-        let onV1 = addNote(to: track, versionID: v1)
-        let onV3 = addNote(to: track, versionID: v3)
+        let v2 = addVersion(to: track, addedAt: Date(timeIntervalSince1970: 200))
+        let v1 = addVersion(to: track, addedAt: Date(timeIntervalSince1970: 100))
+        let v3 = addVersion(to: track, addedAt: Date(timeIntervalSince1970: 300))
+        let onV1 = addNote(to: track, versionID: v1.id)
+        let onV3 = addNote(to: track, versionID: v3.id)
         let legacy = addNote(to: track, versionID: nil)
-        _ = addNote(to: track, versionID: v1, deleted: true)
+        _ = addNote(to: track, versionID: v1.id, deleted: true)
+        _ = addNote(to: track, versionID: nil, deleted: true)
         try context.save()
 
-        XCTAssertEqual(Set(track.visibleNotes(forVersion: v1).map(\.id)), [onV1.id, legacy.id])
-        XCTAssertEqual(Set(track.visibleNotes(forVersion: v3).map(\.id)), [onV3.id, legacy.id])
-        XCTAssertEqual(track.visibleNotes(forVersion: UUID()).map(\.id), [legacy.id])
+        XCTAssertEqual(Set(track.visibleNotes(forVersion: v1.id).map(\.id)), [onV1.id, legacy.id])
+        XCTAssertEqual(track.visibleNotes(forVersion: v2.id).map(\.id), [])
+        XCTAssertEqual(track.visibleNotes(forVersion: v3.id).map(\.id), [onV3.id])
+        XCTAssertEqual(track.visibleNotes(forVersion: UUID()).map(\.id), [])
+        XCTAssertEqual(track.owningVersionID(of: legacy), v1.id)
+        XCTAssertEqual(track.owningVersionID(of: onV3), v3.id)
+    }
+
+    func testSingleVersionShowsItsNotesAndUnversionedNotes() throws {
+        let track = Track(name: "4")
+        context.insert(track)
+        let only = addVersion(to: track, addedAt: Date(timeIntervalSince1970: 100))
+        let own = addNote(to: track, versionID: only.id)
+        let legacy = addNote(to: track, versionID: nil)
+        try context.save()
+
+        XCTAssertEqual(Set(track.visibleNotes(forVersion: only.id).map(\.id)), [own.id, legacy.id])
     }
 
     func testVersionWithoutNotesIsEmptyEvenWhenTrackHasNotes() throws {

@@ -106,11 +106,11 @@ struct ReceiverOnboardingView: View {
 /// Sheet: nearby Macs -> code -> brief success, all inside one navigation stack so
 /// Cancel stays in place. Reuses `DownloadManager.pair`.
 struct PairMacSheet: View {
-    var link: PairingLink? = nil
+    let link: PairingLink?
     let onPaired: () -> Void
     let onCancel: () -> Void
 
-    private enum Phase { case list, connecting, code, paired }
+    private enum Phase { case list, scan, connecting, code, paired }
 
     @Environment(DownloadManager.self) private var downloadManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -118,13 +118,24 @@ struct PairMacSheet: View {
     @State private var selected: DiscoveredPeer? = OnboardingShot.step == .code || OnboardingShot.step == .paired
         ? OnboardingShot.fakePeer : nil
     @State private var nonce: Data? = OnboardingShot.step == .code ? Data() : nil
-    @State private var phase: Phase = {
-        switch OnboardingShot.step {
-        case .code: return .code
-        case .paired: return .paired
-        default: return .list
+    @State private var phase: Phase
+
+    init(
+        link: PairingLink? = nil,
+        startsWithScanner: Bool = false,
+        onPaired: @escaping () -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.link = link
+        self.onPaired = onPaired
+        self.onCancel = onCancel
+        let initialPhase: Phase = switch OnboardingShot.step {
+        case .code: .code
+        case .paired: .paired
+        default: startsWithScanner && link == nil ? .scan : .list
         }
-    }()
+        _phase = State(initialValue: initialPhase)
+    }
     @State private var pairError: String?
     @State private var pairTask: Task<Void, Never>?
     @State private var checkTrigger = 0
@@ -146,6 +157,7 @@ struct PairMacSheet: View {
             Group {
                 switch phase {
                 case .list: peerList
+                case .scan: scanScreen
                 case .connecting: connectingScreen
                 case .code: codeScreen
                 case .paired: pairedScreen
@@ -208,6 +220,15 @@ struct PairMacSheet: View {
                 Text("Open Bounce on your Mac. It shows up here. Mac and iPhone need to be on the same Wi-Fi.")
             }
             Section {
+                Button {
+                    phase = .scan
+                } label: {
+                    Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                }
+            } footer: {
+                Text("Scan the code in Bounce on your Mac. Works on the iPhone\u{2019}s hotspot too.")
+            }
+            Section {
                 GetMacAppHint(isMacFound: !nearby.isEmpty)
             }
             .listRowBackground(Color.clear)
@@ -215,6 +236,13 @@ struct PairMacSheet: View {
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
+    }
+
+    private var scanScreen: some View {
+        PairingCodeScanner { scanned in
+            guard phase == .scan else { return }
+            startFromLink(scanned)
+        }
     }
 
     private var connectingScreen: some View {
@@ -232,7 +260,7 @@ struct PairMacSheet: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                Text("Mac and iPhone need to be on the same Wi-Fi.")
+                Text("Mac and iPhone need to be on the same Wi-Fi or the iPhone\u{2019}s hotspot.")
                     .font(.footnote)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
@@ -322,7 +350,6 @@ struct PairMacSheet: View {
         phase = .list
     }
 
-    private static let linkDiscoveryTimeout: Duration = .seconds(20)
     private static let linkCodeFallbackDelay: Duration = .seconds(5)
 
     private func startFromLink(_ link: PairingLink) {
@@ -332,34 +359,26 @@ struct PairMacSheet: View {
         selected = DiscoveredPeer(id: link.macDeviceID, name: link.macName)
         phase = .connecting
         pairTask = Task {
-            guard let peer = await discoveredPeer(id: link.macDeviceID) else {
-                guard !Task.isCancelled else { return }
-                pairError = "Couldn\u{2019}t find \(link.macName). Open Bounce on it and join the same Wi-Fi."
-                return
-            }
-            let codeFallback = Task {
-                try await Task.sleep(for: Self.linkCodeFallbackDelay)
-                if phase == .connecting { phase = .code }
-            }
-            defer { codeFallback.cancel() }
+            var codeFallback: Task<Void, Error>?
+            defer { codeFallback?.cancel() }
             do {
-                try await downloadManager.pair(with: peer, nonce: nonce, pairingToken: link.token)
+                let paired = try await downloadManager.pair(with: link, nonce: nonce) {
+                    codeFallback = Task {
+                        try await Task.sleep(for: Self.linkCodeFallbackDelay)
+                        if phase == .connecting { phase = .code }
+                    }
+                }
                 guard !Task.isCancelled else { return }
+                guard paired else {
+                    pairError = "Couldn\u{2019}t find \(link.macName). Open Bounce on it and join the same Wi-Fi or the iPhone\u{2019}s hotspot."
+                    return
+                }
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { phase = .paired }
             } catch {
                 guard !Task.isCancelled else { return }
                 pairError = Self.failureText(error)
             }
         }
-    }
-
-    private func discoveredPeer(id: UUID) async -> DiscoveredPeer? {
-        let deadline = ContinuousClock.now.advanced(by: Self.linkDiscoveryTimeout)
-        while !Task.isCancelled, ContinuousClock.now < deadline {
-            if let peer = downloadManager.discoveredPeers.first(where: { $0.id == id }) { return peer }
-            try? await Task.sleep(for: .milliseconds(250))
-        }
-        return nil
     }
 
     private func start(_ peer: DiscoveredPeer) {

@@ -22,6 +22,7 @@ struct TrackRow: View {
     var onRemoveFromSets: (() -> Void)? = nil
     var onDelete: (() -> Void)? = nil
     var showsRecordingDate: Bool = false
+    var mixesExpanded: Binding<Bool>? = nil
     @State private var showDownloadPrompt = false
 
     // Derived here (not passed from list parents) so play/pause only invalidates
@@ -115,7 +116,22 @@ struct TrackRow: View {
             Spacer(minLength: 4)
 
             let showMenu = !isSelecting && (editMode?.wrappedValue.isEditing != true)
-            if showMenu {
+            if showMenu, let mixesExpanded {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        mixesExpanded.wrappedValue.toggle()
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(mixesExpanded.wrappedValue ? 90 : 0))
+                        .frame(width: 36, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mixesExpanded.wrappedValue ? "Hide mixes" : "Show mixes")
+            } else if showMenu {
                 if let version = playbackVersion, showsStandaloneDownloadControl {
                     DownloadAvailabilityButton(version: version)
                 } else {

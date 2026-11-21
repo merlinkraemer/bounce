@@ -743,6 +743,26 @@ struct PlayerSheetContent: View {
 
     @State private var showShareSheet = false
     @State private var showMixSwitcher = false
+    @State private var mixToSwitchToWhenDownloaded: Version?
+
+    private var isMixToSwitchToReady: Bool {
+        mixToSwitchToWhenDownloaded.map { downloadManager.downloadState(for: $0) == .ready } ?? false
+    }
+
+    private func switchToPendingMix() {
+        guard let mix = mixToSwitchToWhenDownloaded else { return }
+        mixToSwitchToWhenDownloaded = nil
+        guard let track = audioPlayer.currentTrack, track.versions.contains(where: { $0.id == mix.id }) else { return }
+        showMixSwitcher = false
+        switchToMix(mix, of: track)
+    }
+
+    private func switchToMix(_ mix: Version, of track: Track) {
+        guard mix.id != audioPlayer.currentVersion?.id else { return }
+        let wasPlaying = audioPlayer.isPlaying
+        let currentTime = audioPlayer.currentTime
+        audioPlayer.load(track: track, version: mix, startTime: currentTime, autoPlay: wasPlaying)
+    }
     @State private var showUpNext = false
     @State private var trackToEdit: Track?
     @State private var trackToAddToPlaylist: Track?
@@ -758,7 +778,7 @@ struct PlayerSheetContent: View {
     private static let firstNotePeek: CGFloat = 40
 
     private var scrollShouldBeEnabled: Bool {
-        hasVisibleNotes && !voiceNoteController.state.isRecording
+        !voiceNoteController.state.isRecording
     }
 
     var body: some View {
@@ -854,9 +874,6 @@ struct PlayerSheetContent: View {
         .onAppear { refreshHasVisibleNotes() }
         .onChange(of: audioPlayer.currentTrack?.id) { _, _ in
             refreshHasVisibleNotes()
-            // Keep the UIScrollView reference; only toggle enabled. Nilling the
-            // bridge here made notes scroll dead until an async resolver retry
-            // happened to win — pan-to-dismiss then stole vertical drags.
             notesScrollState.applyEnabled(scrollShouldBeEnabled)
         }
         .onChange(of: audioPlayer.currentTrack?.visibleNotes.count) { _, _ in
@@ -873,6 +890,7 @@ struct PlayerSheetContent: View {
                 ShareSheet(items: [fileURL])
             }
         }
+        .modifier(PendingMixSwitch(isReady: isMixToSwitchToReady, trackID: audioPlayer.currentTrack?.id, onReady: switchToPendingMix, onTrackChange: { mixToSwitchToWhenDownloaded = nil }))
         .sheet(isPresented: $showMixSwitcher) {
             if let track = audioPlayer.currentTrack {
                 MixSwitcherSheet(
@@ -880,13 +898,11 @@ struct PlayerSheetContent: View {
                     onSelectMix: { mix in
                         draftController.attempt(action: {
                             showMixSwitcher = false
-                            guard mix.id != audioPlayer.currentVersion?.id else { return }
-                            let wasPlaying = audioPlayer.isPlaying
-                            let currentTime = audioPlayer.currentTime
-                            audioPlayer.load(track: track, version: mix, startTime: currentTime, autoPlay: wasPlaying)
+                            switchToMix(mix, of: track)
                         })
                     },
                     isPresented: $showMixSwitcher,
+                    mixToSwitchToWhenDownloaded: $mixToSwitchToWhenDownloaded,
                     downloadManager: downloadManager
                 )
             }
@@ -913,9 +929,6 @@ struct PlayerSheetContent: View {
         }
         .onChange(of: draftController.hasDraft) { _, hasDraft in
             audioPlayer.canAutoAdvance = !hasDraft
-        }
-        .onChange(of: hasVisibleNotes) { _, _ in
-            notesScrollState.applyEnabled(scrollShouldBeEnabled)
         }
         .onChange(of: voiceNoteController.state.isRecording) { _, _ in
             notesScrollState.applyEnabled(scrollShouldBeEnabled)
@@ -961,6 +974,21 @@ struct PlayerSheetContent: View {
 
 // MARK: - Scroll bridge
 
+private struct PendingMixSwitch: ViewModifier {
+    let isReady: Bool
+    let trackID: UUID?
+    let onReady: () -> Void
+    let onTrackChange: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isReady) { _, ready in
+                if ready { onReady() }
+            }
+            .onChange(of: trackID) { _, _ in onTrackChange() }
+    }
+}
+
 final class NotesScrollState {
     weak var scrollView: UIScrollView?
     var isEnabled = false
@@ -984,37 +1012,32 @@ private struct NotesScrollResolver: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // Resolve synchronously first — the async Task+sleep path often lost
-        // the race and left isScrollEnabled sticky-false.
-        if apply(to: uiView) { return }
+        if Self.resolve(uiView, state: state, enabled: isEnabled) { return }
 
-        // One deferred pass for when the scroll view isn't in the hierarchy yet
-        // on this update cycle (common on first expand / track switch).
+        let state = state
         DispatchQueue.main.async {
-            _ = self.apply(to: uiView)
+            Self.resolve(uiView, state: state, enabled: state.isEnabled)
         }
     }
 
     @discardableResult
-    private func apply(to uiView: UIView) -> Bool {
+    private static func resolve(_ uiView: UIView, state: NotesScrollState, enabled: Bool) -> Bool {
         guard let scrollView = scrollContaining(uiView) else {
-            state.isEnabled = isEnabled
-            // Don't wipe a previously resolved scroll view just because this
-            // update ran before the view was re-parented.
+            state.isEnabled = enabled
             if let existing = state.scrollView {
-                existing.isScrollEnabled = isEnabled
+                existing.isScrollEnabled = enabled
             }
             return false
         }
         state.scrollView = scrollView
-        state.isEnabled = isEnabled
-        scrollView.isScrollEnabled = isEnabled
+        state.isEnabled = enabled
+        scrollView.isScrollEnabled = enabled
         scrollView.keyboardDismissMode = .onDrag
         scrollView.alwaysBounceVertical = true
         return true
     }
 
-    private func scrollContaining(_ view: UIView) -> UIScrollView? {
+    private static func scrollContaining(_ view: UIView) -> UIScrollView? {
         var parent: UIView? = view.superview
         while let current = parent {
             if let scroll = current as? UIScrollView { return scroll }

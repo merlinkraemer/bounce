@@ -2,10 +2,20 @@ import Foundation
 import SwiftData
 
 extension Track {
-    /// Visible notes shown for `versionID`: the version's own notes plus legacy
-    /// notes saved without a version.
+    public var firstVersion: Version? {
+        versions.min(by: { $0.addedAt < $1.addedAt })
+    }
+
+    /// Notes saved without a version belong to the first (oldest) version.
+    public func owningVersionID(of note: Note) -> UUID? {
+        note.versionID ?? firstVersion?.id
+    }
+
     public func visibleNotes(forVersion versionID: UUID?) -> [Note] {
-        notes.filter { !$0.isSoftDeleted && ($0.versionID == nil || $0.versionID == versionID) }
+        let legacyOwnerID = firstVersion?.id
+        return notes.filter { note in
+            !note.isSoftDeleted && (note.versionID ?? legacyOwnerID) == versionID
+        }
     }
 
     /// Soft-delete a note so its tombstone can sync across devices.

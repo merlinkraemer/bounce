@@ -36,6 +36,10 @@ struct MiniWaveformView: View {
                 : 0
 
             ZStack(alignment: .leading) {
+                if waveformData?.isEmpty ?? true {
+                    WaveformLoadingPlaceholder(barWidth: 2, barSpacing: 1)
+                        .frame(width: viewWidth, height: viewHeight)
+                }
                 Canvas { context, size in
                     if let unplayed = unplayedBars, let played = playedBars {
                         let barSize = CGSize(width: size.width, height: size.height)

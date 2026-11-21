@@ -93,7 +93,7 @@ private struct TrackDetailContent: View {
         guard let timestamp = note.timestamp else { return }
         voiceMemoPlayer.stop()
 
-        if let versionID = note.versionID,
+        if let versionID = track.owningVersionID(of: note),
            versionID != audioPlayer.currentVersion?.id,
            let version = track.versions.first(where: { $0.id == versionID }) {
             audioPlayer.load(

@@ -93,10 +93,20 @@ if [[ "$DRY_RUN" == 1 ]]; then
   skipped "xcodebuild -exportArchive (signing and upload)"
   echo "Dry run complete: nothing signed or uploaded."
 else
+  ASC_KEY_ID="${BOUNCE_ASC_KEY_ID:-PH4ND94R26}"
+  ASC_ISSUER_ID="${BOUNCE_ASC_ISSUER_ID:-5bf6c3c7-93b6-4b36-a56e-eca8f92b001c}"
+  ASC_KEY_PATH="${BOUNCE_ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8}"
+  auth_args=()
+  if [[ -f "$ASC_KEY_PATH" ]]; then
+    auth_args=(-authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+  else
+    warn "No App Store Connect API key at $ASC_KEY_PATH; using the Xcode account."
+  fi
   xcodebuild -exportArchive \
     -archivePath "$ARCHIVE_PATH" \
     -exportOptionsPlist "$EXPORT_OPTIONS" \
     -exportPath "$WORK_DIR/export" \
-    -allowProvisioningUpdates
+    -allowProvisioningUpdates \
+    ${auth_args[@]+"${auth_args[@]}"}
   echo "Uploaded. Finish the build in App Store Connect / TestFlight."
 fi

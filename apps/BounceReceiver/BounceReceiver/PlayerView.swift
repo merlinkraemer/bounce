@@ -195,7 +195,7 @@ private struct PlayerWaveformStack: View {
     }
 
     private func refreshNotes() {
-        notesForVersion = track.visibleNotes.filter { $0.versionID == versionID }
+        notesForVersion = track.visibleNotes(forVersion: versionID)
     }
 }
 

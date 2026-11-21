@@ -30,8 +30,7 @@ func groupNotesByTimestamp(_ notes: [Note]) -> [NoteGroup] {
 }
 
 func sortedVersionNotes(from track: Track?, versionID: UUID) -> [Note] {
-    (track?.visibleNotes ?? [])
-        .filter { $0.versionID == versionID }
+    (track?.visibleNotes(forVersion: versionID) ?? [])
         .sorted { lhs, rhs in
             let lt = lhs.timestamp ?? .infinity
             let rt = rhs.timestamp ?? .infinity

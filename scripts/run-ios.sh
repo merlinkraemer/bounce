@@ -115,7 +115,8 @@ xcodebuild build \
   PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
   BOUNCE_URL_SCHEME="bounce-dev" \
   PRODUCT_NAME="Bounce Dev" \
-  INFOPLIST_KEY_CFBundleDisplayName="Bounce Dev"
+  INFOPLIST_KEY_CFBundleDisplayName="Bounce Dev" \
+  CURRENT_PROJECT_VERSION="$(date +%m%d.%H%M)"
 
 step "Installing dev app on device..."
 xcrun devicectl device install app --device "$DEVICE_UDID" "$DEVICE_APP_PATH"

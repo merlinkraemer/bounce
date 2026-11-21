@@ -5,6 +5,7 @@ struct MixSwitcherSheet: View {
     let track: Track
     let onSelectMix: (Version) -> Void
     @Binding var isPresented: Bool
+    @Binding var mixToSwitchToWhenDownloaded: Version?
 
     @Environment(AudioPlayer.self) private var audioPlayer
     let downloadManager: DownloadManager
@@ -37,12 +38,7 @@ struct MixSwitcherSheet: View {
             List {
                 ForEach(sortedMixes) { mix in
                     Button {
-                        if FileManager.default.fileExists(atPath: mix.filePath) {
-                            onSelectMix(mix)
-                        } else {
-                            unavailableMix = mix
-                            showUnavailableAlert = true
-                        }
+                        select(mix)
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
@@ -62,15 +58,13 @@ struct MixSwitcherSheet: View {
                                 }
                             }
                             Spacer()
+                            DownloadAvailabilityButton(version: mix)
                             if audioPlayer.currentVersion?.id == mix.id {
                                 Image(systemName: "checkmark")
                                     .font(.body.weight(.semibold))
                                     .foregroundStyle(Color.accentColor)
                             }
                         }
-                        // Spacer alone isn't hit-testable inside a .plain
-                        // Button — without this the empty middle of the row
-                        // swallows taps, so the mix never switches.
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -88,17 +82,34 @@ struct MixSwitcherSheet: View {
                 }
             }
         }
+        .environment(downloadManager)
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
         .alert("Mix is not downloaded", isPresented: $showUnavailableAlert) {
             Button("Download") {
-                if let unavailableMix {
-                    downloadManager.requestDownload(for: unavailableMix)
+                if let unavailableMix, downloadManager.requestDownload(for: unavailableMix) {
+                    mixToSwitchToWhenDownloaded = unavailableMix
                 }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Connect to the paired Mac to download this mix for offline playback.")
+        }
+    }
+
+    private func select(_ mix: Version) {
+        switch downloadManager.downloadState(for: mix) {
+        case .ready:
+            onSelectMix(mix)
+        case .pending, .downloading:
+            mixToSwitchToWhenDownloaded = mix
+        case .notDownloaded, .failed:
+            if case .connected = downloadManager.connectionState, downloadManager.requestDownload(for: mix) {
+                mixToSwitchToWhenDownloaded = mix
+            } else {
+                unavailableMix = mix
+                showUnavailableAlert = true
+            }
         }
     }
 

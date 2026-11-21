@@ -30,6 +30,7 @@ struct SongsView: View {
     @State private var isSelectingTracks = false
     @State private var showImportPicker = false
     @State private var selectedTrackIDs = Set<UUID>()
+    @State private var expandedTrackIDs = Set<UUID>()
     @State private var showDeleteConfirmation = false
     @State private var selectionRemoval: DownloadManager.TrackRemoval = .delete
     @State private var selectionIncludesLocalOnly = false
@@ -303,6 +304,77 @@ struct SongsView: View {
 
     @ViewBuilder
     private func trackRow(for track: Track) -> some View {
+        let mixes = isSelectingTracks || track.isSet ? [] : Self.mixesNewestFirst(of: track)
+        if mixes.isEmpty {
+            trackRowContent(for: track)
+        } else {
+            trackRowContent(for: track, mixesExpanded: expansionBinding(for: track.id))
+            if expandedTrackIDs.contains(track.id) {
+                ForEach(mixes) { mix in
+                    MixRow(
+                        track: track,
+                        version: mix,
+                        onPlay: { play(track, version: mix) },
+                        onAddToQueue: { addToQueue(track) },
+                        onAddToPlaylist: { trackToAddToPlaylist = track },
+                        onShare: { share(track) },
+                        onEdit: { trackToEdit = track },
+                        onDelete: { confirmRemoval(of: track) }
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(
+                        top: 0,
+                        leading: SongsListMetrics.horizontalInset,
+                        bottom: 0,
+                        trailing: SongsListMetrics.horizontalInset
+                    ))
+                }
+            }
+        }
+    }
+
+    private static func mixesNewestFirst(of track: Track) -> [Version] {
+        guard track.versions.count > 1 else { return [] }
+        return track.versions.sorted { $0.addedAt > $1.addedAt }
+    }
+
+    private func share(_ track: Track) {
+        if let url = TrackShareURL.resolve(for: track) {
+            shareItem = ShareItem(url: url)
+        }
+    }
+
+    private func confirmRemoval(of track: Track) {
+        guard let removal = downloadManager.removal(for: track) else { return }
+        trackToRemoveRemoval = removal
+        trackToRemove = track
+    }
+
+    private func expansionBinding(for trackID: UUID) -> Binding<Bool> {
+        Binding(
+            get: { expandedTrackIDs.contains(trackID) },
+            set: { expanded in
+                if expanded {
+                    expandedTrackIDs.insert(trackID)
+                } else {
+                    expandedTrackIDs.remove(trackID)
+                }
+            }
+        )
+    }
+
+    private func play(_ track: Track, version: Version) {
+        if audioPlayer.currentVersion?.id == version.id {
+            audioPlayer.openFullScreenPlayer()
+            return
+        }
+        audioPlayer.load(track: track, version: version, queue: queueForTappedTrack(track), context: .autoplayLibrary)
+        audioPlayer.openFullScreenPlayer()
+    }
+
+    @ViewBuilder
+    private func trackRowContent(for track: Track, mixesExpanded: Binding<Bool>? = nil) -> some View {
         TrackRow(
             track: track,
             isSelecting: isSelectingTracks,
@@ -318,17 +390,10 @@ struct SongsView: View {
             },
             onAddToQueue: { addToQueue(track) },
             onAddToPlaylist: { trackToAddToPlaylist = track },
-            onShare: {
-                if let url = TrackShareURL.resolve(for: track) {
-                    shareItem = ShareItem(url: url)
-                }
-            },
+            onShare: { share(track) },
             onEdit: { trackToEdit = track },
-            onDelete: {
-                guard let removal = downloadManager.removal(for: track) else { return }
-                trackToRemoveRemoval = removal
-                trackToRemove = track
-            }
+            onDelete: { confirmRemoval(of: track) },
+            mixesExpanded: mixesExpanded
         )
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if !isSelectingTracks {

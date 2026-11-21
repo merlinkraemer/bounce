@@ -40,6 +40,12 @@ public enum BouncePreferenceKey {
     /// iPhone-side display name sent to the Mac. Empty or unset falls back to
     /// `UIDevice.current.name`, which iOS 16+ reduces to the model name.
     public static let receiverDeviceName = "com.bounce.sync.receiverDeviceName"
+    /// Mac-side port of the last sync listener, reused on launch so a
+    /// phone's saved direct route survives Mac restarts.
+    public static let senderListenerPort = "com.bounce.sync.senderListenerPort"
+    /// iPhone-side JSON `DirectSenderRoute` of the paired Mac, used when
+    /// Bonjour finds nothing (iPhone hotspot).
+    public static let directSenderRoute = "com.bounce.sync.directSenderRoute"
 }
 
 /// Fallback values applied when a preference key has never been written.
